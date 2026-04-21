@@ -1,0 +1,11 @@
+@"
+node_modules/
+dist/
+.env
+*.log
+__pycache__/
+venv/
+.DS_Store
+.venv/
+*.pyc
+"@ | Out-File -FilePath "C:\Proyectos\xcout\.gitignore" -Encoding UTF8
