@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { jugadores } from '../data/jugadores'
+import { jugadores as jugadoresFallback } from '../data/jugadores'
+import { getJugadores } from '../services/api'
 import PlayerCard from '../components/PlayerCard'
 import { PlayerCardSkeleton } from '../components/Skeletons'
 
@@ -20,7 +21,6 @@ const RANKING_METRICS = [
   { key: 'xG',                label: 'xG' },
   { key: 'xA',                label: 'xA' },
   { key: 'regates',           label: 'Regates' },
-  { key: 'presiones',         label: 'Presiones' },
   { key: 'pases_completados', label: 'Pases %' },
   { key: 'ga_por_90',         label: 'G+A/90' },
   { key: 'valor_mercado',    label: 'Valor €M' },
@@ -226,11 +226,13 @@ function IconFilter({ count }) {
 
 // ─── Página ───────────────────────────────────────────────────────────────────
 export default function Home() {
-  const [query,       setQuery]       = useState('')
-  const [posicion,    setPosicion]    = useState('Todas')
-  const [loading,     setLoading]     = useState(true)
-  const [vista,       setVista]       = useState('cards')
-  const [metricaRank, setMetricaRank] = useState('goles')
+  const [query,          setQuery]          = useState('')
+  const [posicion,       setPosicion]       = useState('Todas')
+  const [loading,        setLoading]        = useState(true)
+  const [vista,          setVista]          = useState('cards')
+  const [metricaRank,    setMetricaRank]    = useState('goles')
+  const [jugadores,      setJugadores]      = useState(jugadoresFallback)
+  const [fuenteDatos,    setFuenteDatos]    = useState('fallback')  // 'api' | 'fallback'
 
   // Panel avanzado
   const [panelOpen, setPanelOpen] = useState(false)
@@ -238,8 +240,22 @@ export default function Home() {
   const [filtros,   setFiltros]   = useState(INITIAL_FILTROS)
 
   useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 1200)
-    return () => clearTimeout(t)
+    let cancelled = false
+    setLoading(true)
+    getJugadores()
+      .then(data => {
+        if (cancelled) return
+        setJugadores(data)
+        setFuenteDatos('api')
+        setLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setJugadores(jugadoresFallback)
+        setFuenteDatos('fallback')
+        setLoading(false)
+      })
+    return () => { cancelled = true }
   }, [])
 
   // ── Aplicar / limpiar ──
@@ -280,7 +296,7 @@ export default function Home() {
     .sort((a, b) => getMetricVal(b, metricaRank) - getMetricVal(a, metricaRank))
     .slice(0, 10)
 
-  const numFiltros = contarFiltrosActivos(filtros, posicion)
+  const numFiltros  = contarFiltrosActivos(filtros, posicion)
 
   return (
     <main className="animate-fade-in">
@@ -294,9 +310,11 @@ export default function Home() {
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28">
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/5 mb-8">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+              <span className={`w-1.5 h-1.5 rounded-full ${fuenteDatos === 'api' ? 'bg-green-400' : 'bg-cyan-400'} animate-pulse`} />
               <span className="text-cyan-400 text-xs font-semibold tracking-widest uppercase">
-                LaLiga 2024/25
+                {fuenteDatos === 'api'
+                  ? `LaLiga 2025/26 · ${jugadores.length} jugadores`
+                  : 'LaLiga 2024/25 · datos demo'}
               </span>
             </div>
 

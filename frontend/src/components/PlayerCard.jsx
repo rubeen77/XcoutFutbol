@@ -7,7 +7,6 @@ const THRESHOLDS = {
   xA:                { max: 15,   good: 8,   ok: 3 },
   pases_completados: { max: 95,   good: 85,  ok: 74 },
   regates:           { max: 9,    good: 4,   ok: 2 },
-  presiones:         { max: 35,   good: 24,  ok: 14 },
   recuperaciones:    { max: 12,   good: 6,   ok: 3 },
   goles_por_90:      { max: 1.2,  good: 0.6, ok: 0.3 },
   asistencias_por_90:{ max: 0.8,  good: 0.4, ok: 0.2 },
@@ -17,18 +16,18 @@ const THRESHOLDS = {
 const METRIC_LABELS = {
   goles: 'Goles', asistencias: 'Asist.', xG: 'xG', xA: 'xA',
   pases_completados: 'Pases %', regates: 'Regates',
-  presiones: 'Presión', recuperaciones: 'Recup.',
+  recuperaciones: 'Recup.',
   goles_por_90: 'G/90', asistencias_por_90: 'A/90', ga_por_90: 'G+A/90',
 }
 
 const POSICION_METRICS = {
-  'Delantero':       ['goles', 'xG', 'asistencias', 'presiones'],
+  'Delantero':       ['goles', 'xG', 'asistencias', 'recuperaciones'],
   'Extremo':         ['goles', 'regates', 'asistencias', 'xG'],
   'Mediapunta':      ['asistencias', 'xA', 'goles', 'pases_completados'],
-  'Centrocampista':  ['pases_completados', 'presiones', 'recuperaciones', 'asistencias'],
-  'Defensa Central': ['recuperaciones', 'presiones', 'pases_completados', 'goles'],
-  'Lateral':         ['asistencias', 'regates', 'recuperaciones', 'presiones'],
-  'Portero':         ['pases_completados', 'recuperaciones', 'presiones', 'goles'],
+  'Centrocampista':  ['pases_completados', 'recuperaciones', 'regates', 'asistencias'],
+  'Defensa Central': ['recuperaciones', 'pases_completados', 'goles', 'xG'],
+  'Lateral':         ['asistencias', 'regates', 'recuperaciones', 'pases_completados'],
+  'Portero':         ['pases_completados', 'recuperaciones', 'goles', 'xG'],
 }
 
 const POSICION_BADGE = {
