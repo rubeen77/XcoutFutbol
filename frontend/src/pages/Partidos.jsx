@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine,
 } from 'recharts'
+import { getPartidos } from '../services/api'
 
 /* ══════════════════════════════════════════════════════
    HELPERS
@@ -1450,7 +1451,12 @@ function MatchCard({ partido, expanded, onToggle }) {
         </div>
       </button>
 
-      {expanded && jugado    && <MatchDetail partido={partido} />}
+      {expanded && jugado && partido.stats && <MatchDetail partido={partido} />}
+      {expanded && jugado && !partido.stats && (
+        <div className="border-t border-slate-800 px-5 py-6 text-center text-sm text-slate-500">
+          Datos detallados no disponibles
+        </div>
+      )}
       {expanded && !jugado && (
         <div className="border-t border-slate-800 px-5 py-6 text-center text-sm text-slate-500">
           Partido no disputado todavía
@@ -1461,19 +1467,54 @@ function MatchCard({ partido, expanded, onToggle }) {
 }
 
 /* ══════════════════════════════════════════════════════
+   ADAPTER — API partidos → shape del componente
+══════════════════════════════════════════════════════ */
+function abrevFromNombre(nombre) {
+  return (nombre || '???').split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase()
+}
+
+function adaptarPartidoAPI(raw) {
+  const fecha = raw.fecha ? new Date(raw.fecha) : null
+  const jugado = raw.estado === 'finalizado' || raw.estado === 'jugado'
+  return {
+    id:        raw.id,
+    jornada:   raw.jornada,
+    local:     { nombre: raw.local?.nombre || '', abrev: abrevFromNombre(raw.local?.nombre), color: '#94a3b8' },
+    visitante: { nombre: raw.visitante?.nombre || '', abrev: abrevFromNombre(raw.visitante?.nombre), color: '#64748b' },
+    resultado: { local: raw.goles_local ?? 0, visitante: raw.goles_visitante ?? 0 },
+    fecha:     fecha ? fecha.toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' }) : '',
+    hora:      fecha ? fecha.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' }) : '',
+    estado:    jugado ? 'jugado' : (raw.estado || 'pendiente'),
+    estadio:   raw.estadio || '',
+    xG:        raw.xg_local != null ? { local: raw.xg_local, visitante: raw.xg_visitante ?? 0 } : null,
+    stats: null, timeline: null, xgTimeline: null, disparos: null, jugadores: [],
+  }
+}
+
+/* ══════════════════════════════════════════════════════
    PAGE
 ══════════════════════════════════════════════════════ */
 export default function Partidos() {
   const [tab,        setTab]        = useState('directo')
   const [expanded,   setExpanded]   = useState(null)
-  const [selectedId, setSelectedId] = useState('d2')   // por defecto el partido en min 67
+  const [selectedId, setSelectedId] = useState('d2')
+  const [partidos,   setPartidos]   = useState(PARTIDOS)
+
+  useEffect(() => {
+    getPartidos()
+      .then(data => {
+        const items = (data.partidos || []).map(adaptarPartidoAPI)
+        if (items.length > 0) setPartidos(items)
+      })
+      .catch(() => {})
+  }, [])
 
   const toggle      = (id) => setExpanded(prev => prev === id ? null : id)
   const toggleLive  = (id) => setSelectedId(prev => prev === id ? null : id)
   const selectedPartido = DIRECTO.find(p => p.id === selectedId) ?? null
 
-  const goles   = PARTIDOS.reduce((acc, p) => acc + p.resultado.local + p.resultado.visitante, 0)
-  const xGTotal = PARTIDOS.reduce((acc, p) => acc + p.xG.local + p.xG.visitante, 0)
+  const goles   = partidos.reduce((acc, p) => acc + (p.resultado?.local ?? 0) + (p.resultado?.visitante ?? 0), 0)
+  const xGTotal = partidos.reduce((acc, p) => acc + (p.xG?.local ?? 0) + (p.xG?.visitante ?? 0), 0)
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
@@ -1515,7 +1556,7 @@ export default function Partidos() {
               : 'text-slate-400 hover:text-white'
           }`}
         >
-          Jornada 35
+          {partidos[0]?.jornada ? `Jornada ${partidos[0].jornada}` : 'Jornada'}
         </button>
       </div>
 
@@ -1550,12 +1591,12 @@ export default function Partidos() {
         </div>
       )}
 
-      {/* ══════════ JORNADA 35 */}
+      {/* ══════════ JORNADA */}
       {tab === 'jornada' && (
         <div className="animate-fade-in max-w-3xl">
           <div className="grid grid-cols-3 gap-3 mb-6">
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-center">
-              <p className="text-2xl font-black text-white tabular-nums">{PARTIDOS.length}</p>
+              <p className="text-2xl font-black text-white tabular-nums">{partidos.length}</p>
               <p className="text-[11px] text-slate-500 mt-0.5">Partidos</p>
             </div>
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-center">
@@ -1568,7 +1609,7 @@ export default function Partidos() {
             </div>
           </div>
           <div className="flex flex-col gap-3">
-            {PARTIDOS.map((partido, i) => (
+            {partidos.map((partido, i) => (
               <div key={partido.id} className="animate-fade-up" style={{ animationDelay: `${i * 50}ms` }}>
                 <MatchCard
                   partido={partido}

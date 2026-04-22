@@ -5,7 +5,8 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer,
 } from 'recharts'
-import { jugadores } from '../data/jugadores'
+import { jugadores as jugadoresFallback } from '../data/jugadores'
+import { getJugador } from '../services/api'
 import PlayerRadarChart from '../components/RadarChart'
 import { JugadorSkeleton } from '../components/Skeletons'
 import { useCountUp } from '../hooks/useCountUp'
@@ -18,7 +19,6 @@ const THRESHOLDS = {
   xA:                { max: 15,   good: 8,   ok: 3 },
   pases_completados: { max: 95,   good: 85,  ok: 74 },
   regates:           { max: 9,    good: 4,   ok: 2 },
-  presiones:         { max: 35,   good: 24,  ok: 14 },
   recuperaciones:    { max: 12,   good: 6,   ok: 3 },
   goles_por_90:      { max: 1.2,  good: 0.6, ok: 0.3 },
   asistencias_por_90:{ max: 0.8,  good: 0.4, ok: 0.2 },
@@ -28,7 +28,7 @@ const THRESHOLDS = {
 const METRICA_LABELS = {
   goles: 'Goles', asistencias: 'Asistencias', xG: 'xG', xA: 'xA',
   pases_completados: 'Pases %', regates: 'Regates',
-  presiones: 'Presiones', recuperaciones: 'Recuperaciones',
+  recuperaciones: 'Recuperaciones',
   minutos_jugados: 'Minutos jugados',
   goles_por_90: 'Goles / 90 min',
   asistencias_por_90: 'Asistencias / 90 min',
@@ -38,6 +38,78 @@ const METRICA_LABELS = {
 const SIN_BARRA = new Set(['minutos_jugados'])
 
 const p90 = (val, min) => +(((val / min) * 90).toFixed(2))
+
+// ─── Mapeo posición FBref → español ──────────────────────────────────────────
+const POS_MAP = {
+  'FW': 'Delantero', 'FW,MF': 'Extremo', 'MF,FW': 'Mediapunta',
+  'MF': 'Centrocampista', 'MF,DF': 'Centrocampista',
+  'DF,MF': 'Defensa Central', 'DF': 'Defensa Central', 'GK': 'Portero',
+}
+
+function fmtTemporada(t) {
+  if (t && t.length === 4) return `${t.slice(0, 2)}/${t.slice(2)}`
+  return t ?? ''
+}
+
+function adaptarPerfilJugador(raw) {
+  const stats = raw.estadisticas_jugador || []
+  const latest = stats.find(s => s.temporada === '2526') || stats[0] || {}
+
+  const estadisticas_por_temporada = stats.length > 0
+    ? stats.map(s => ({
+        temporada:         fmtTemporada(s.temporada),
+        actual:            s.temporada === '2526',
+        equipo:            raw.equipos?.nombre || '',
+        partidos:          null,
+        goles:             s.goles        || 0,
+        asistencias:       s.asistencias  || 0,
+        xG:                s.xg           || 0,
+        xA:                s.xa           || 0,
+        pases_completados: s.pases_completados || 0,
+        regates:           s.regates      || 0,
+        recuperaciones:    s.recuperaciones || 0,
+        minutos_jugados:   s.minutos      || 0,
+      }))
+    : null
+
+  const minutos = latest.minutos || 0
+  const goles   = latest.goles   || 0
+  const asis    = latest.asistencias || 0
+
+  const metricas = {
+    goles,
+    asistencias:        asis,
+    xG:                 latest.xg           || 0,
+    xA:                 latest.xa           || 0,
+    pases_completados:  latest.pases_completados || 0,
+    regates:            latest.regates      || 0,
+    recuperaciones:     latest.recuperaciones || 0,
+    minutos_jugados:    minutos,
+    goles_por_90:       latest.goles_por_90        ?? p90(goles, minutos),
+    asistencias_por_90: latest.asistencias_por_90  ?? p90(asis, minutos),
+    ga_por_90:          latest.ga_por_90           ?? p90(goles + asis, minutos),
+  }
+
+  const evolucion_valor = (raw.valor_mercado_historia || []).length > 0
+    ? raw.valor_mercado_historia.map(h => ({ temporada: fmtTemporada(h.temporada), valor: h.valor }))
+    : null
+
+  return {
+    id:           raw.id,
+    nombre:       raw.nombre,
+    posicion:     POS_MAP[raw.posicion] || raw.posicion || '',
+    edad:         raw.edad   || 0,
+    nacionalidad: raw.nacionalidad || '',
+    foto_url:     raw.foto_url     || null,
+    valor_mercado: raw.valor_mercado ?? null,
+    equipo:       raw.equipos?.nombre || '',
+    metricas,
+    estadisticas_por_temporada,
+    evolucion_valor,
+    carrera:         null,
+    ultimos_partidos: null,
+  }
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function metricColor(key, value) {
@@ -57,7 +129,7 @@ function metricasDesdeTemporada(t) {
   const base = {
     goles: t.goles, asistencias: t.asistencias, xG: t.xG, xA: t.xA,
     pases_completados: t.pases_completados, regates: t.regates,
-    presiones: t.presiones, recuperaciones: t.recuperaciones,
+    recuperaciones: t.recuperaciones,
     minutos_jugados: t.minutos_jugados,
   }
   if (t.minutos_jugados) {
@@ -275,25 +347,34 @@ function StatPill({ label, value, sub }) {
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 export default function Jugador() {
-  const { id }   = useParams()
-  const jugador  = jugadores.find((j) => j.id === Number(id))
+  const { id }             = useParams()
+  const [jugador, setJugador] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [temporadaSel, setTemporadaSel] = useState(null)
+
+  useEffect(() => {
+    setLoading(true)
+    setJugador(null)
+    getJugador(Number(id))
+      .then(raw => setJugador(adaptarPerfilJugador(raw)))
+      .catch(() => {
+        const fallback = jugadoresFallback.find(j => j.id === Number(id)) ?? null
+        setJugador(fallback)
+      })
+      .finally(() => setLoading(false))
+  }, [id])
+
+  useEffect(() => {
+    if (jugador?.estadisticas_por_temporada) {
+      const temps = jugador.estadisticas_por_temporada
+      const def = (temps.find(t => t.actual) ?? temps.at(-1))?.temporada ?? null
+      setTemporadaSel(def)
+    }
+  }, [jugador])
+
   const historia = jugador?.estadisticas_por_temporada
     ? { temporadas: jugador.estadisticas_por_temporada }
     : null
-
-  const [loading, setLoading] = useState(true)
-  useEffect(() => {
-    setLoading(true)
-    const t = setTimeout(() => setLoading(false), 1000)
-    return () => clearTimeout(t)
-  }, [id])
-
-  // Temporada por defecto: la marcada como actual, o la última disponible
-  const defaultTemporada = historia
-    ? (historia.temporadas.find(t => t.actual) ?? historia.temporadas.at(-1)).temporada
-    : null
-
-  const [temporadaSel, setTemporadaSel] = useState(defaultTemporada)
 
   // Lista de temporadas de más reciente a más antigua
   const temporadasDisponibles = useMemo(
@@ -696,7 +777,7 @@ export default function Jugador() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-800">
-                  {['Temporada','Equipo','PJ','Min','Goles','Asist.','xG','xA','Pases %','Regates','Presiones','Recup.'].map(h => (
+                  {['Temporada','Equipo','PJ','Min','Goles','Asist.','xG','xA','Pases %','Regates','Recup.'].map(h => (
                     <th key={h}
                         className="text-right first:text-left px-4 py-3
                                    text-xs font-semibold text-slate-500 uppercase tracking-wider
@@ -733,7 +814,7 @@ export default function Jugador() {
                       <td className="px-4 py-3 text-right text-slate-400 tabular-nums text-xs">
                         {t.minutos_jugados?.toLocaleString('es')}
                       </td>
-                      {['goles','asistencias','xG','xA','pases_completados','regates','presiones','recuperaciones'].map(k => (
+                      {['goles','asistencias','xG','xA','pases_completados','regates','recuperaciones'].map(k => (
                         <td key={k}
                             className={`px-4 py-3 text-right font-bold tabular-nums last:pr-6 ${metricColor(k, t[k])}`}>
                           {t[k]}

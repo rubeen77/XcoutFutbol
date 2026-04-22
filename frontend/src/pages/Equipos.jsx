@@ -5,6 +5,7 @@ import {
 } from 'recharts'
 import { equipos } from '../data/equipos'
 import { jugadores } from '../data/jugadores'
+import { getEquipos } from '../services/api'
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
 function rachaColor(r) {
@@ -292,8 +293,7 @@ export default function Equipos() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 900)
-    return () => clearTimeout(t)
+    getEquipos().catch(() => {}).finally(() => setLoading(false))
   }, [])
 
   const handleSelect = (id) => {

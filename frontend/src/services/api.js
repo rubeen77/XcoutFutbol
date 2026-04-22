@@ -49,7 +49,6 @@ function adaptarJugador(raw) {
       xA:                stats.xa  || 0,
       pases_completados: stats.pases_completados || 0,
       regates:           stats.regates           || 0,
-      presiones:         stats.presiones         || 0,
       recuperaciones:    stats.recuperaciones    || 0,
       minutos_jugados:   minutos,
       goles_por_90:      stats.goles_por_90        ?? p90(goles, minutos),
@@ -80,7 +79,6 @@ function adaptarRankingItem(r, metricaFrontend) {
       xA:                r.xa  || 0,
       pases_completados: r.pases_completados || 0,
       regates:           r.regates           || 0,
-      presiones:         r.presiones         || 0,
       recuperaciones:    r.recuperaciones    || 0,
       minutos_jugados:   minutos,
       goles_por_90:      r.goles_por_90        ?? p90(goles, minutos),
@@ -103,7 +101,12 @@ function adaptarRankingItem(r, metricaFrontend) {
  * Devuelve jugadores en el shape que espera el frontend.
  */
 export async function getJugadores(filtros = {}) {
-  const params = new URLSearchParams({ limit: 600, temporada: '2526' })
+  const params = new URLSearchParams({
+    limit:     600,
+    temporada: '2526',
+    orden:     filtros.orden     || 'goles',
+    orden_dir: filtros.orden_dir || 'desc',
+  })
   if (filtros.liga_id)           params.set('liga_id', filtros.liga_id)
   if (filtros.equipo_id)         params.set('equipo_id', filtros.equipo_id)
   if (filtros.min_goles != null) params.set('min_goles', filtros.min_goles)

@@ -3,32 +3,33 @@ import { useSearchParams } from 'react-router-dom'
 import {
   Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer,
 } from 'recharts'
-import { jugadores } from '../data/jugadores'
+import { jugadores as jugadoresFallback } from '../data/jugadores'
+import { getJugadores } from '../services/api'
 import PlayerRadarChart from '../components/RadarChart'
 import { ScoutingSkeleton } from '../components/Skeletons'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const MAX_VALUES = {
   goles: 30, asistencias: 20, xG: 25, xA: 15,
-  pases_completados: 95, regates: 9, presiones: 35, recuperaciones: 12,
+  pases_completados: 95, regates: 9, recuperaciones: 12,
   minutos_jugados: 3600, goles_por_90: 1.2, asistencias_por_90: 0.8, ga_por_90: 1.8,
 }
 
 const METRIC_LABELS = {
   goles: 'Goles', asistencias: 'Asistencias', xG: 'xG', xA: 'xA',
   pases_completados: 'Pases %', regates: 'Regates',
-  presiones: 'Presiones', recuperaciones: 'Recuperaciones',
+  recuperaciones: 'Recuperaciones',
   minutos_jugados: 'Minutos', goles_por_90: 'G/90',
   asistencias_por_90: 'A/90', ga_por_90: 'G+A/90',
 }
 
 // Solo las 8 métricas base van al radar
-const RADAR_METRICS = ['goles', 'asistencias', 'xG', 'xA', 'pases_completados', 'regates', 'presiones', 'recuperaciones']
+const RADAR_METRICS = ['goles', 'asistencias', 'xG', 'xA', 'pases_completados', 'regates', 'recuperaciones']
 
 const CATEGORIES = [
-  { label: 'Ofensiva',        icon: '⚽', metrics: ['goles', 'asistencias', 'xG', 'xA'] },
-  { label: 'Creación',        icon: '🎯', metrics: ['pases_completados', 'xA', 'asistencias_por_90'] },
-  { label: 'Físico / Presión',icon: '💪', metrics: ['presiones', 'recuperaciones', 'regates'] },
+  { label: 'Ofensiva',   icon: '⚽', metrics: ['goles', 'asistencias', 'xG', 'xA'] },
+  { label: 'Creación',   icon: '🎯', metrics: ['pases_completados', 'xA', 'asistencias_por_90'] },
+  { label: 'Defensiva',  icon: '🛡️', metrics: ['recuperaciones', 'regates'] },
 ]
 
 const COLOR_A  = '#22d3ee'   // cyan
@@ -180,17 +181,22 @@ function PlayerSelect({ value, onChange, label, color, exclude }) {
 export default function Scouting() {
   const [searchParams]  = useSearchParams()
   const [tab, setTab]   = useState('similares')
+  const [jugadores, setJugadores] = useState(jugadoresFallback)
 
   // ── Tab similares ──
   const [seleccionado, setSeleccionado] = useState(
-    Number(searchParams.get('ref')) || jugadores[0].id
+    Number(searchParams.get('ref')) || jugadoresFallback[0].id
   )
   const [duelId, setDuelId]   = useState(null)
   const [loading, setLoading] = useState(true)
 
   // ── Tab comparador ──
-  const [comparA, setComparA] = useState(jugadores[0].id)
-  const [comparB, setComparB] = useState(jugadores[1].id)
+  const [comparA, setComparA] = useState(jugadoresFallback[0].id)
+  const [comparB, setComparB] = useState(jugadoresFallback[1].id)
+
+  useEffect(() => {
+    getJugadores().then(setJugadores).catch(() => {})
+  }, [])
 
   useEffect(() => {
     const ref = Number(searchParams.get('ref'))

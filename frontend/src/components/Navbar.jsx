@@ -143,8 +143,20 @@ export default function Navbar() {
   const [open, setOpen] = useState(false)
   const [ligaOpen, setLigaOpen] = useState(false)
   const [ligaSel, setLigaSel] = useState('LaLiga')
+  const [backendOk, setBackendOk] = useState(null)
   const dropRef = useRef(null)
   const { pathname } = useLocation()
+
+  useEffect(() => {
+    function ping() {
+      fetch('http://localhost:8080/health')
+        .then(r => setBackendOk(r.ok))
+        .catch(() => setBackendOk(false))
+    }
+    ping()
+    const id = setInterval(ping, 30000)
+    return () => clearInterval(id)
+  }, [])
 
   useEffect(() => {
     function handleClick(e) {
@@ -181,6 +193,24 @@ export default function Navbar() {
                 cout
               </span>
             </span>
+            {/* Backend status dot */}
+            <div className="relative group/dot ml-0.5 flex items-center">
+              <span
+                className={`block w-1.5 h-1.5 rounded-full ${
+                  backendOk === true
+                    ? 'bg-green-400 animate-pulse'
+                    : backendOk === false
+                    ? 'bg-red-500'
+                    : 'bg-slate-600'
+                }`}
+              />
+              <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-4
+                             opacity-0 group-hover/dot:opacity-100 transition-opacity duration-150
+                             whitespace-nowrap bg-slate-800 border border-slate-700 text-slate-300
+                             text-[11px] font-medium px-2 py-1 rounded-lg shadow-lg z-50">
+                {backendOk === true ? 'Backend conectado' : backendOk === false ? 'Backend desconectado' : 'Comprobando...'}
+              </div>
+            </div>
           </Link>
 
           {/* Desktop links */}

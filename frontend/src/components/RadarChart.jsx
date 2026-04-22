@@ -4,13 +4,13 @@ import {
 
 const MAX_VALUES = {
   goles: 30, asistencias: 20, xG: 25, xA: 15,
-  pases_completados: 95, regates: 9, presiones: 35, recuperaciones: 12,
+  pases_completados: 95, regates: 9, recuperaciones: 12,
 }
 
 const LABELS = {
   goles: 'Goles', asistencias: 'Asistencias', xG: 'xG', xA: 'xA',
   pases_completados: 'Pases %', regates: 'Regates',
-  presiones: 'Presiones', recuperaciones: 'Recuperaciones',
+  recuperaciones: 'Recuperaciones',
 }
 
 function CustomTooltip({ active, payload }) {

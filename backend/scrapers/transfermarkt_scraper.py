@@ -21,6 +21,7 @@ import re
 import sys
 import time
 import logging
+import datetime
 import unicodedata
 from pathlib import Path
 from typing import Optional
@@ -39,7 +40,7 @@ TEMPORADA        = "2526"
 LIGA_ID          = 1
 TM_SEASON        = 2025          # año de inicio de la temporada en Transfermarkt
 TM_LIGA_CODE     = "ES1"         # código de LaLiga en Transfermarkt
-CARGAR_HISTORIAL = False          # activar para cargar historial multi-temporada
+CARGAR_HISTORIAL = True           # activar para cargar historial multi-temporada
 REQUEST_DELAY    = 1.2            # segundos entre requests (evitar ban)
 
 HEADERS = {
@@ -203,30 +204,84 @@ def scrape_all_squads(teams: list[dict]) -> pd.DataFrame:
 # Paso 3 (opcional): historial multi-temporada por jugador
 # ---------------------------------------------------------------------------
 
+# Abreviaturas de mes en varios idiomas que usa TM
+_MONTH_ABBR = {
+    "jan": 1, "ene": 1, "feb": 2, "mar": 3, "mär": 3, "abr": 4, "apr": 4,
+    "may": 5, "mai": 5, "jun": 6, "jul": 7, "ago": 8, "aug": 8,
+    "sep": 9, "okt": 10, "oct": 10, "nov": 11, "dic": 12, "dez": 12, "dec": 12,
+}
+
+
+def _date_to_temporada(date_str: str) -> Optional[str]:
+    """
+    Convierte una fecha TM en código de temporada YYZZ.
+    Julio–diciembre → inicio de temporada; enero–junio → fin de temporada.
+      "Sep 12, 2023" → "2324"   (temporada 2023/24)
+      "Mar 15, 2024" → "2324"   (temporada 2023/24, antes de julio)
+    """
+    s = date_str.strip()
+    for fmt in ("%b %d, %Y", "%b. %d, %Y", "%d. %b %Y", "%d. %b. %Y",
+                "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            d = datetime.datetime.strptime(s, fmt)
+            y = d.year - (1 if d.month < 7 else 0)
+            return f"{str(y)[2:]}{str(y + 1)[2:]}"
+        except ValueError:
+            pass
+
+    # Fallback: buscar mes abreviado + año 4 dígitos en el texto
+    low = s.lower()
+    year_m = re.search(r"(\d{4})", s)
+    if not year_m:
+        return None
+    year = int(year_m.group(1))
+    month = 9   # por defecto septiembre si no reconocemos el mes
+    for abbr, num in _MONTH_ABBR.items():
+        if abbr in low:
+            month = num
+            break
+    y = year - (1 if month < 7 else 0)
+    return f"{str(y)[2:]}{str(y + 1)[2:]}"
+
+
 def scrape_market_history(player_url: str) -> list[dict]:
-    """Extrae historial de valor desde la página del jugador en TM."""
-    soup = _get(player_url.replace("/profil/", "/marktwertverlauf/"))
+    """
+    Extrae historial de valor de mercado desde la página TM del jugador.
+    Devuelve una lista de {temporada: 'YYZZ', valor: float (millones €)}.
+    Deduplica por temporada: conserva el último valor registrado en cada una.
+    """
+    url = player_url.replace("/profil/", "/marktwertverlauf/")
+    soup = _get(url)
     if not soup:
         return []
 
-    history = []
-    # TM embebe los datos del gráfico en un script como highcharts data
     for script in soup.find_all("script"):
         text = script.string or ""
-        if "series" not in text or "data" not in text:
+        if "datum" not in text:
             continue
-        # Buscar pares {y: valor, datum: fecha}
-        entries = re.findall(r"\{[^}]*?'y'\s*:\s*([\d.]+)[^}]*?'datum'\s*:\s*'([^']+)'", text)
-        for val_str, date_str in entries:
-            # Extraer temporada del año de la fecha
-            year_m = re.search(r"(\d{4})", date_str)
-            if year_m:
-                year = int(year_m.group(1))
-                season = f"{str(year)[2:]}{str(year+1)[2:]}"
-                history.append({"temporada": season, "valor": float(val_str) / 1_000_000})
-        if history:
-            break
-    return history
+
+        # Extraer valores y fechas por separado (evita problemas con llaves anidadas)
+        y_vals  = re.findall(r"[{,]\s*['\"]?y['\"]?\s*:\s*(\d+)", text)
+        d_vals  = re.findall(r"datum\s*:\s*['\"]([^'\"]+)['\"]", text)
+
+        if not y_vals or not d_vals:
+            continue
+        if len(y_vals) != len(d_vals):
+            # Intentar parear los que coincidan en cantidad
+            n = min(len(y_vals), len(d_vals))
+            y_vals, d_vals = y_vals[:n], d_vals[:n]
+
+        # Agrupar por temporada: el último valor de cada temporada gana
+        by_temp: dict[str, float] = {}
+        for y_str, datum in zip(y_vals, d_vals):
+            temp = _date_to_temporada(datum)
+            if temp:
+                by_temp[temp] = round(float(y_str) / 1_000_000, 3)
+
+        if by_temp:
+            return [{"temporada": t, "valor": v} for t, v in by_temp.items()]
+
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -373,11 +428,16 @@ def run():
     historial_ok = upsert_historial(df_merged)
 
     if CARGAR_HISTORIAL:
-        log.info("Cargando historial multi-temporada (1 request/jugador)...")
+        jugadores_con_url = df_merged[df_merged["player_url"].notna()]
+        total_j = len(jugadores_con_url)
+        log.info("Cargando historial multi-temporada (%d jugadores, ~%ds)...",
+                 total_j, int(total_j * REQUEST_DELAY))
+
+        BATCH = 50
         hist_rows = []
-        for _, r in df_merged.iterrows():
-            if not r.get("player_url"):
-                continue
+        hist_total = 0
+
+        for i, (_, r) in enumerate(jugadores_con_url.iterrows(), 1):
             time.sleep(REQUEST_DELAY)
             entries = scrape_market_history(r["player_url"])
             for e in entries:
@@ -386,11 +446,20 @@ def run():
                     "temporada":  e["temporada"],
                     "valor":      e["valor"],
                 })
-        if hist_rows:
-            supabase.table("valor_mercado_historia").upsert(
-                hist_rows, on_conflict="jugador_id,temporada"
-            ).execute()
-            log.info("Historial multi-temporada: %d entradas.", len(hist_rows))
+
+            if i % BATCH == 0 or i == total_j:
+                if hist_rows:
+                    supabase.table("valor_mercado_historia").upsert(
+                        hist_rows, on_conflict="jugador_id,temporada"
+                    ).execute()
+                    hist_total += len(hist_rows)
+                    log.info("  [%d/%d] Batch insertado: %d entradas (total: %d)",
+                             i, total_j, len(hist_rows), hist_total)
+                    hist_rows = []
+                else:
+                    log.info("  [%d/%d] Sin entradas en este batch.", i, total_j)
+
+        log.info("Historial multi-temporada completado: %d entradas totales.", hist_total)
 
     log.info("=" * 52)
     log.info(" RESUMEN")

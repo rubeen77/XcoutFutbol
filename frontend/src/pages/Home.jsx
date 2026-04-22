@@ -3,7 +3,14 @@ import { Link } from 'react-router-dom'
 import { jugadores as jugadoresFallback } from '../data/jugadores'
 import { getJugadores } from '../services/api'
 import PlayerCard from '../components/PlayerCard'
-import { PlayerCardSkeleton } from '../components/Skeletons'
+
+function Spinner() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <div className="w-8 h-8 rounded-full border-2 border-slate-700 border-t-cyan-400 animate-spin" />
+    </div>
+  )
+}
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const POSITION_FILTERS = [
@@ -290,7 +297,9 @@ export default function Home() {
     return matchText && matchPos && matchEdad && matchG && matchA && matchXG && matchXA && matchMin && matchValor
   }
 
-  const filtrados    = jugadores.filter(pasaFiltros)
+  const filtrados    = jugadores
+    .filter(pasaFiltros)
+    .sort((a, b) => (b.metricas.goles ?? 0) - (a.metricas.goles ?? 0))
   const rankingLista = [...jugadores]
     .filter(pasaFiltros)
     .sort((a, b) => getMetricVal(b, metricaRank) - getMetricVal(a, metricaRank))
@@ -309,14 +318,14 @@ export default function Home() {
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28">
           <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/5 mb-8">
-              <span className={`w-1.5 h-1.5 rounded-full ${fuenteDatos === 'api' ? 'bg-green-400' : 'bg-cyan-400'} animate-pulse`} />
-              <span className="text-cyan-400 text-xs font-semibold tracking-widest uppercase">
-                {fuenteDatos === 'api'
-                  ? `LaLiga 2025/26 · ${jugadores.length} jugadores`
-                  : 'LaLiga 2024/25 · datos demo'}
-              </span>
-            </div>
+            {!loading && fuenteDatos === 'api' && (
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/5 mb-8">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                <span className="text-cyan-400 text-xs font-semibold tracking-widest uppercase">
+                  LaLiga 2025/26 · {jugadores.length} jugadores
+                </span>
+              </div>
+            )}
 
             <h1 className="mb-6 leading-[0.95]">
               <span className="block text-5xl sm:text-7xl font-light text-slate-500 tracking-tight">El fútbol</span>
@@ -545,9 +554,11 @@ export default function Home() {
         {vista === 'cards' && (
           <>
             <div className="flex items-center gap-2 mb-6">
-              <span className="text-slate-600 text-sm">
-                {filtrados.length} jugador{filtrados.length !== 1 ? 'es' : ''}
-              </span>
+              {!loading && fuenteDatos === 'api' && (
+                <span className="text-slate-600 text-sm">
+                  {filtrados.length} jugador{filtrados.length !== 1 ? 'es' : ''}
+                </span>
+              )}
               {posicion !== 'Todas' && (
                 <span className="text-xs text-cyan-400 bg-cyan-400/10 px-2 py-0.5 rounded-full">
                   {posicion}
@@ -556,9 +567,7 @@ export default function Home() {
             </div>
 
             {loading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {[...Array(8)].map((_, i) => <PlayerCardSkeleton key={i} />)}
-              </div>
+              <Spinner />
             ) : filtrados.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filtrados.map((j, i) => (
@@ -601,9 +610,7 @@ export default function Home() {
             </div>
 
             {loading ? (
-              <div className="space-y-2">
-                {[...Array(10)].map((_, i) => <div key={i} className="skeleton h-16 rounded-2xl" />)}
-              </div>
+              <Spinner />
             ) : rankingLista.length > 0 ? (
               <RankingView lista={rankingLista} metricKey={metricaRank} />
             ) : (

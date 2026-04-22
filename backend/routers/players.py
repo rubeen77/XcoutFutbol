@@ -11,7 +11,9 @@ from database.supabase_client import supabase
 
 router = APIRouter()
 
-METRICAS_VALIDAS = {"goles", "asistencias", "xg", "xa", "ga_por_90", "valor_mercado", "minutos"}
+METRICAS_VALIDAS  = {"goles", "asistencias", "xg", "xa", "ga_por_90", "valor_mercado", "minutos"}
+CAMPOS_ORDENABLES = {"goles", "asistencias", "xg", "xa", "minutos", "pases_completados",
+                     "regates", "recuperaciones", "goles_por_90", "asistencias_por_90", "ga_por_90"}
 
 
 # ---------------------------------------------------------------------------
@@ -26,6 +28,8 @@ def listar_jugadores(
     min_goles:         Optional[int]   = Query(None, ge=0),
     max_valor_mercado: Optional[float] = Query(None, ge=0, description="Millones €"),
     temporada:         str             = Query("2526"),
+    orden:             str             = Query("minutos", description=f"Campo por el que ordenar: {', '.join(sorted(CAMPOS_ORDENABLES))}"),
+    orden_dir:         str             = Query("desc",    description="asc | desc"),
     limit:             int             = Query(50, ge=1, le=1000),
     offset:            int             = Query(0, ge=0),
 ):
@@ -46,6 +50,9 @@ def listar_jugadores(
         q = q.eq("liga_id", liga_id)
     if min_goles is not None:
         q = q.gte("goles", min_goles)
+
+    campo_orden = orden if orden in CAMPOS_ORDENABLES else "minutos"
+    q = q.order(campo_orden, desc=(orden_dir.lower() != "asc"))
 
     res = q.execute()
     filas = res.data
