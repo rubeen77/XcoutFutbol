@@ -1,16 +1,19 @@
 import { Link } from 'react-router-dom'
 
+// top  → cian brillante (≈ top 25%)
+// good → cian normal    (≈ top 50%)
+// ok   → amber          (≈ bottom 10% cutoff; por debajo → rojo)
 const THRESHOLDS = {
-  goles:             { max: 30,   good: 15,  ok: 7 },
-  asistencias:       { max: 20,   good: 8,   ok: 4 },
-  xG:                { max: 25,   good: 12,  ok: 5 },
-  xA:                { max: 15,   good: 8,   ok: 3 },
-  pases_completados: { max: 95,   good: 85,  ok: 74 },
-  regates:           { max: 9,    good: 4,   ok: 2 },
-  recuperaciones:    { max: 12,   good: 6,   ok: 3 },
-  goles_por_90:      { max: 1.2,  good: 0.6, ok: 0.3 },
-  asistencias_por_90:{ max: 0.8,  good: 0.4, ok: 0.2 },
-  ga_por_90:         { max: 1.8,  good: 0.9, ok: 0.5 },
+  goles:             { max: 30,   top: 12,   good: 5,    ok: 2 },
+  asistencias:       { max: 20,   top: 7,    good: 3,    ok: 1 },
+  xG:                { max: 25,   top: 10,   good: 4,    ok: 1.5 },
+  xA:                { max: 15,   top: 6,    good: 3,    ok: 1 },
+  pases_completados: { max: 95,   top: 86,   good: 74,   ok: 58 },
+  regates:           { max: 9,    top: 4,    good: 2,    ok: 0.5 },
+  recuperaciones:    { max: 12,   top: 6,    good: 3,    ok: 0.8 },
+  goles_por_90:      { max: 1.2,  top: 0.55, good: 0.28, ok: 0.07 },
+  asistencias_por_90:{ max: 0.8,  top: 0.38, good: 0.18, ok: 0.04 },
+  ga_por_90:         { max: 1.8,  top: 0.85, good: 0.42, ok: 0.1 },
 }
 
 const METRIC_LABELS = {
@@ -31,13 +34,13 @@ const POSICION_METRICS = {
 }
 
 const POSICION_BADGE = {
-  'Delantero':       'text-red-400 bg-red-400/8',
-  'Extremo':         'text-orange-400 bg-orange-400/8',
-  'Mediapunta':      'text-amber-400 bg-amber-400/8',
-  'Centrocampista':  'text-cyan-400 bg-cyan-400/8',
-  'Defensa Central': 'text-blue-400 bg-blue-400/8',
-  'Lateral':         'text-violet-400 bg-violet-400/8',
-  'Portero':         'text-slate-400 bg-slate-400/8',
+  'Delantero':       'text-orange-400 bg-orange-400/10',
+  'Extremo':         'text-yellow-400 bg-yellow-400/10',
+  'Mediapunta':      'text-purple-400 bg-purple-400/10',
+  'Centrocampista':  'text-cyan-400 bg-cyan-400/10',
+  'Defensa Central': 'text-blue-400 bg-blue-400/10',
+  'Lateral':         'text-indigo-400 bg-indigo-400/10',
+  'Portero':         'text-slate-400 bg-slate-400/10',
 }
 
 // Gradient combos for the avatar based on first initial
@@ -52,10 +55,11 @@ const AVATAR_GRADIENTS = [
 
 function getColor(key, value) {
   const t = THRESHOLDS[key]
-  if (!t) return { text: 'text-slate-400', bar: 'bg-slate-600' }
-  if (value >= t.good) return { text: 'text-cyan-400', bar: 'bg-cyan-400' }
+  if (!t)              return { text: 'text-slate-400', bar: 'bg-slate-600' }
+  if (value >= t.top)  return { text: 'text-cyan-300',  bar: 'bg-cyan-300' }
+  if (value >= t.good) return { text: 'text-cyan-400',  bar: 'bg-cyan-400' }
   if (value >= t.ok)   return { text: 'text-amber-400', bar: 'bg-amber-400' }
-  return                      { text: 'text-red-400',  bar: 'bg-red-500' }
+  return                      { text: 'text-red-400',   bar: 'bg-red-500' }
 }
 
 function getInitials(nombre) {
@@ -111,7 +115,11 @@ export default function PlayerCard({ jugador }) {
             </h3>
             <p className="text-slate-500 text-xs mt-0.5 truncate">{jugador.equipo}</p>
           </div>
-          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${badgeClass}`}>
+          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${
+            jugador.edad < 25  ? 'text-cyan-400 bg-cyan-400/10' :
+            jugador.edad <= 33 ? 'text-amber-400 bg-amber-400/10' :
+                                 'text-red-400 bg-red-400/10'
+          }`}>
             {jugador.edad}a
           </span>
         </div>
