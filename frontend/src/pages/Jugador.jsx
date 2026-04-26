@@ -13,13 +13,13 @@ import { useCountUp } from '../hooks/useCountUp'
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 const THRESHOLDS = {
-  goles:             { max: 30,   good: 15,  ok: 7 },
-  asistencias:       { max: 20,   good: 8,   ok: 4 },
-  xG:                { max: 25,   good: 12,  ok: 5 },
-  xA:                { max: 15,   good: 8,   ok: 3 },
+  goles:             { max: 35,   good: 20,  ok: 8  },
+  asistencias:       { max: 20,   good: 12,  ok: 5  },
+  xG:                { max: 28,   good: 15,  ok: 6  },
+  xA:                { max: 15,   good: 8,   ok: 3  },
   pases_completados: { max: 95,   good: 85,  ok: 74 },
-  regates:           { max: 9,    good: 4,   ok: 2 },
-  recuperaciones:    { max: 12,   good: 6,   ok: 3 },
+  regates:           { max: 120,  good: 60,  ok: 25 },
+  recuperaciones:    { max: 80,   good: 40,  ok: 18 },
   goles_por_90:      { max: 1.2,  good: 0.6, ok: 0.3 },
   asistencias_por_90:{ max: 0.8,  good: 0.4, ok: 0.2 },
   ga_por_90:         { max: 1.8,  good: 0.9, ok: 0.5 },
@@ -53,23 +53,32 @@ function fmtTemporada(t) {
 
 function adaptarPerfilJugador(raw) {
   const stats = raw.estadisticas_jugador || []
-  const latest = stats.find(s => s.temporada === '2526') || stats[0] || {}
+  const sortedStats = [...stats].sort((a, b) => (a.temporada ?? '').localeCompare(b.temporada ?? ''))
+  const latest = sortedStats.at(-1) || {}
+  const temporadaActual = latest.temporada ?? null
 
-  const estadisticas_por_temporada = stats.length > 0
-    ? stats.map(s => ({
-        temporada:         fmtTemporada(s.temporada),
-        actual:            s.temporada === '2526',
-        equipo:            raw.equipos?.nombre || '',
-        partidos:          null,
-        goles:             s.goles        || 0,
-        asistencias:       s.asistencias  || 0,
-        xG:                s.xg           || 0,
-        xA:                s.xa           || 0,
-        pases_completados: s.pases_completados || 0,
-        regates:           s.regates      || 0,
-        recuperaciones:    s.recuperaciones || 0,
-        minutos_jugados:   s.minutos      || 0,
-      }))
+  const estadisticas_por_temporada = sortedStats.length > 0
+    ? sortedStats.map(s => {
+        const goles  = s.goles        ?? null
+        const asists = s.asistencias  ?? null
+        const mins   = s.minutos      ?? null
+        return {
+          temporada:          fmtTemporada(s.temporada),
+          actual:             s.temporada === temporadaActual,
+          equipo:             raw.equipos?.nombre || '',
+          goles,
+          asistencias:        asists,
+          xG:                 s.xg               ?? null,
+          xA:                 s.xa               ?? null,
+          pases_completados:  s.pases_completados ?? null,
+          regates:            s.regates           ?? null,
+          recuperaciones:     s.recuperaciones    ?? null,
+          minutos_jugados:    mins,
+          goles_por_90:       s.goles_por_90        ?? (mins && goles != null ? p90(goles, mins)          : null),
+          asistencias_por_90: s.asistencias_por_90  ?? (mins && asists != null ? p90(asists, mins)        : null),
+          ga_por_90:          s.ga_por_90            ?? (mins && goles != null && asists != null ? p90(goles + asists, mins) : null),
+        }
+      })
     : null
 
   const minutos = latest.minutos || 0
@@ -91,7 +100,9 @@ function adaptarPerfilJugador(raw) {
   }
 
   const evolucion_valor = (raw.valor_mercado_historia || []).length > 0
-    ? raw.valor_mercado_historia.map(h => ({ temporada: fmtTemporada(h.temporada), valor: h.valor }))
+    ? [...raw.valor_mercado_historia]
+        .sort((a, b) => (a.temporada ?? '').localeCompare(b.temporada ?? ''))
+        .map(h => ({ temporada: fmtTemporada(h.temporada), valor: h.valor }))
     : null
 
   return {
@@ -125,19 +136,24 @@ function getInitials(nombre) {
 }
 
 // Construye un objeto metricas completo a partir de una fila del historial
+// Coerce null → 0 para que radar/barras no reciban NaN
 function metricasDesdeTemporada(t) {
-  const base = {
-    goles: t.goles, asistencias: t.asistencias, xG: t.xG, xA: t.xA,
-    pases_completados: t.pases_completados, regates: t.regates,
-    recuperaciones: t.recuperaciones,
-    minutos_jugados: t.minutos_jugados,
+  const g   = t.goles           ?? 0
+  const a   = t.asistencias     ?? 0
+  const min = t.minutos_jugados ?? 0
+  return {
+    goles:              g,
+    asistencias:        a,
+    xG:                 t.xG               ?? 0,
+    xA:                 t.xA               ?? 0,
+    pases_completados:  t.pases_completados ?? 0,
+    regates:            t.regates           ?? 0,
+    recuperaciones:     t.recuperaciones    ?? 0,
+    minutos_jugados:    min,
+    goles_por_90:       t.goles_por_90        ?? (min ? p90(g, min) : 0),
+    asistencias_por_90: t.asistencias_por_90  ?? (min ? p90(a, min) : 0),
+    ga_por_90:          t.ga_por_90            ?? (min ? p90(g + a, min) : 0),
   }
-  if (t.minutos_jugados) {
-    base.goles_por_90       = p90(t.goles, t.minutos_jugados)
-    base.asistencias_por_90 = p90(t.asistencias, t.minutos_jugados)
-    base.ga_por_90          = p90(t.goles + t.asistencias, t.minutos_jugados)
-  }
-  return base
 }
 
 // ─── Marca de agua para capturas de pantalla ─────────────────────────────────
@@ -765,72 +781,88 @@ export default function Jugador() {
         </div>
       </div>
 
-      {/* ── Tabla histórica (siempre muestra toda la carrera, resalta seleccionada) ── */}
-      {historia && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-800">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">
-              Estadísticas por temporada
-            </p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-800">
-                  {['Temporada','Equipo','PJ','Min','Goles','Asist.','xG','xA','Pases %','Regates','Recup.'].map(h => (
-                    <th key={h}
-                        className="text-right first:text-left px-4 py-3
-                                   text-xs font-semibold text-slate-500 uppercase tracking-wider
-                                   whitespace-nowrap first:pl-6 last:pr-6">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {[...historia.temporadas].reverse().map((t) => {
-                  const seleccionada = t.temporada === temporadaSel
-                  return (
+      {/* ── Tabla de estadísticas por temporada ── */}
+      {historia && (() => {
+        const filas = [
+          ...historia.temporadas.filter(t => t.actual),
+          ...[...historia.temporadas].filter(t => !t.actual).reverse(),
+        ]
+
+        // Mostrar xG/xA solo si alguna fila histórica tiene dato real
+        const historicas = filas.filter(t => !t.actual)
+        const showXG = historicas.some(t => t.xG != null)
+        const showXA = historicas.some(t => t.xA != null)
+
+        const thCls = "text-right first:text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap first:pl-6 last:pr-6"
+        const rowCls = (sel) => `border-b border-slate-800/40 last:border-0 cursor-pointer transition-colors ${
+          sel ? 'bg-cyan-400/5' : 'hover:bg-slate-800/40'
+        }`
+        const TdNum = ({ v, k }) => (
+          <td className={`px-4 py-3 text-right font-bold tabular-nums last:pr-6 ${v != null ? metricColor(k, v) : 'text-slate-700'}`}>
+            {v != null ? v : ''}
+          </td>
+        )
+
+        return (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-800">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">
+                Estadísticas por temporada
+              </p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-800">
+                    {['Temporada','Equipo','Min','Goles','Asist.'].map(h => (
+                      <th key={h} className={thCls}>{h}</th>
+                    ))}
+                    {showXG && <th className={thCls}>xG</th>}
+                    {showXA && <th className={thCls}>xA</th>}
+                    {['G/90','A/90','Pases %','Regates','Recup.'].map(h => (
+                      <th key={h} className={thCls}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filas.map((t) => (
                     <tr
                       key={t.temporada}
                       onClick={() => setTemporadaSel(t.temporada)}
-                      className={`border-b border-slate-800/40 last:border-0 cursor-pointer transition-colors ${
-                        seleccionada
-                          ? 'bg-cyan-400/5 border-l-2 border-l-cyan-400'
-                          : 'hover:bg-slate-800/40'
-                      }`}
+                      className={rowCls(t.temporada === temporadaSel)}
                     >
                       <td className="pl-6 pr-4 py-3 font-bold text-white whitespace-nowrap">
                         {t.temporada}
                         {t.actual && (
-                          <span className="ml-2 text-xs font-semibold text-cyan-400
-                                           bg-cyan-400/10 px-1.5 py-0.5 rounded-full">
+                          <span className="ml-2 text-xs font-semibold text-cyan-400 bg-cyan-400/10 px-1.5 py-0.5 rounded-full">
                             actual
                           </span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{t.equipo}</td>
-                      <td className="px-4 py-3 text-right text-slate-300 tabular-nums">{t.partidos}</td>
                       <td className="px-4 py-3 text-right text-slate-400 tabular-nums text-xs">
-                        {t.minutos_jugados?.toLocaleString('es')}
+                        {t.minutos_jugados?.toLocaleString('es') ?? ''}
                       </td>
-                      {['goles','asistencias','xG','xA','pases_completados','regates','recuperaciones'].map(k => (
-                        <td key={k}
-                            className={`px-4 py-3 text-right font-bold tabular-nums last:pr-6 ${metricColor(k, t[k])}`}>
-                          {t[k]}
-                        </td>
-                      ))}
+                      <TdNum v={t.goles}              k="goles" />
+                      <TdNum v={t.asistencias}        k="asistencias" />
+                      {showXG && <TdNum v={t.xG}      k="xG" />}
+                      {showXA && <TdNum v={t.xA}      k="xA" />}
+                      <TdNum v={t.goles_por_90}       k="goles_por_90" />
+                      <TdNum v={t.asistencias_por_90} k="asistencias_por_90" />
+                      <TdNum v={t.actual ? t.pases_completados : null} k="pases_completados" />
+                      <TdNum v={t.actual ? t.regates          : null} k="regates" />
+                      <TdNum v={t.actual ? t.recuperaciones   : null} k="recuperaciones" />
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="px-6 py-3 text-xs text-slate-600 border-t border-slate-800">
+              Haz clic en una fila para seleccionar la temporada.
+            </p>
           </div>
-          <p className="px-6 py-3 text-xs text-slate-600 border-t border-slate-800">
-            Haz clic en una fila para seleccionar la temporada.
-          </p>
-        </div>
-      )}
+        )
+      })()}
 
     </main>
   )

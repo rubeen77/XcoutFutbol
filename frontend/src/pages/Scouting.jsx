@@ -10,15 +10,15 @@ import { ScoutingSkeleton } from '../components/Skeletons'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const MAX_VALUES = {
-  goles: 30, asistencias: 20, xG: 25, xA: 15,
-  pases_completados: 95, regates: 9, recuperaciones: 12,
+  goles: 35, asistencias: 20, xG: 28, xA: 15,
+  pases_completados: 95, regates: 120, recuperaciones: 80,
   minutos_jugados: 3600, goles_por_90: 1.2, asistencias_por_90: 0.8, ga_por_90: 1.8,
 }
 
 const METRIC_LABELS = {
   goles: 'Goles', asistencias: 'Asistencias', xG: 'xG', xA: 'xA',
   pases_completados: 'Pases %', regates: 'Regates',
-  recuperaciones: 'Recuperaciones',
+  recuperaciones: 'Recup.',
   minutos_jugados: 'Minutos', goles_por_90: 'G/90',
   asistencias_por_90: 'A/90', ga_por_90: 'G+A/90',
 }
@@ -131,11 +131,10 @@ function ComparRow({ label, valA, valB, metricKey }) {
 
 // ─── Radar con dos jugadores superpuestos ─────────────────────────────────────
 function DualRadar({ a, b }) {
-  const data = RADAR_METRICS.map(key => ({
-    label: METRIC_LABELS[key],
-    A: Math.round(((a.metricas[key] ?? 0) / MAX_VALUES[key]) * 100),
-    B: Math.round(((b.metricas[key] ?? 0) / MAX_VALUES[key]) * 100),
-  }))
+  const data = RADAR_METRICS.map(key => {
+    const norm = v => Math.min(100, Math.round(((Number(v) || 0) / MAX_VALUES[key]) * 100))
+    return { label: METRIC_LABELS[key], A: norm(a.metricas[key]), B: norm(b.metricas[key]) }
+  })
   return (
     <ResponsiveContainer width="100%" height={300}>
       <RadarChart data={data} margin={{ top: 10, right: 30, bottom: 10, left: 30 }}>

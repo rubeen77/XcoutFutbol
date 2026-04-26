@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="120" viewBox="0 0 400 120">
+  <defs>
+    <!-- X gradients -->
+    <linearGradient id="xg1" x1="22" y1="22" x2="58" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#22d3ee" stop-opacity="0.55"/>
+      <stop offset="48%"  stop-color="#e0faff"/>
+      <stop offset="52%"  stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0.55"/>
+    </linearGradient>
+    <linearGradient id="xg2" x1="58" y1="22" x2="22" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#22d3ee" stop-opacity="0.55"/>
+      <stop offset="48%"  stop-color="#e0faff"/>
+      <stop offset="52%"  stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0.55"/>
+    </linearGradient>
+    <!-- Glow halo -->
+    <radialGradient id="xglow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.85"/>
+      <stop offset="45%"  stop-color="#67e8f9" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Cyan text glow filter -->
+    <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur1"/>
+      <feGaussianBlur stdDeviation="10" result="blur2"/>
+      <feMerge>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="400" height="120" rx="16" fill="#0f172a"/>
+
+  <!-- ── Icon (centered vertically, 80x80 at x=20) ── -->
+  <g transform="translate(20, 20)">
+    <!-- Outer dashed scope ring -->
+    <circle cx="40" cy="40" r="35"
+      stroke="#22d3ee" stroke-width="1.1" stroke-opacity="0.18"
+      stroke-dasharray="4 5.5" fill="none"/>
+    <!-- Inner ring -->
+    <circle cx="40" cy="40" r="23"
+      stroke="#22d3ee" stroke-width="0.8" stroke-opacity="0.09"
+      fill="none"/>
+    <!-- X arm \ -->
+    <line x1="23" y1="23" x2="57" y2="57"
+      stroke="url(#xg1)" stroke-width="3.8" stroke-linecap="round"/>
+    <!-- X arm / -->
+    <line x1="57" y1="23" x2="23" y2="57"
+      stroke="url(#xg2)" stroke-width="3.8" stroke-linecap="round"/>
+    <!-- Glow halo -->
+    <circle cx="40" cy="40" r="11" fill="url(#xglow)"/>
+    <!-- Center dot -->
+    <circle cx="40" cy="40" r="2.6" fill="white" fill-opacity="0.92"/>
+  </g>
+
+  <!-- ── Text "Xcout" ── -->
+  <!-- "X" in cyan with glow -->
+  <text x="124" y="80"
+    font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif"
+    font-weight="900"
+    font-size="58"
+    letter-spacing="-2"
+    fill="#22d3ee"
+    filter="url(#glow-cyan)">X</text>
+  <!-- "cout" in white -->
+  <text x="168" y="80"
+    font-family="'Arial', 'Helvetica Neue', Arial, sans-serif"
+    font-weight="600"
+    font-size="58"
+    letter-spacing="-1"
+    fill="white"
+    fill-opacity="0.95">cout</text>
+</svg>

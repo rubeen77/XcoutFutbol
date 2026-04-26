@@ -3,14 +3,14 @@ import {
 } from 'recharts'
 
 const MAX_VALUES = {
-  goles: 30, asistencias: 20, xG: 25, xA: 15,
-  pases_completados: 95, regates: 9, recuperaciones: 12,
+  goles: 35, asistencias: 20, xG: 28, xA: 15,
+  pases_completados: 95, regates: 120, recuperaciones: 80,
 }
 
 const LABELS = {
   goles: 'Goles', asistencias: 'Asistencias', xG: 'xG', xA: 'xA',
   pases_completados: 'Pases %', regates: 'Regates',
-  recuperaciones: 'Recuperaciones',
+  recuperaciones: 'Recup.',
 }
 
 function CustomTooltip({ active, payload }) {
@@ -28,12 +28,15 @@ function CustomTooltip({ active, payload }) {
 
 export default function PlayerRadarChart({ metricas, color = '#22d3ee' }) {
   // Sólo renderizar las 8 métricas base; ignorar minutos, per-90, etc.
-  const data = Object.entries(metricas).filter(([key]) => key in MAX_VALUES).map(([key, value]) => ({
-    metric: key,
-    label: LABELS[key] || key,
-    value: Math.round((value / (MAX_VALUES[key] || 100)) * 100),
-    raw: value,
-  }))
+  const data = Object.entries(metricas)
+    .filter(([key]) => key in MAX_VALUES)
+    .map(([key, value]) => {
+      const num = Number(value)
+      const pct = Number.isFinite(num)
+        ? Math.min(100, Math.round((num / MAX_VALUES[key]) * 100))
+        : 0
+      return { metric: key, label: LABELS[key] || key, value: pct, raw: Number.isFinite(num) ? num : 0 }
+    })
 
   return (
     <ResponsiveContainer width="100%" height={300}>

@@ -24,6 +24,7 @@ Temporadas soportadas (formato soccerdata YYZZ):
 """
 
 import sys
+import argparse
 import logging
 import unicodedata
 from pathlib import Path
@@ -107,14 +108,83 @@ def _is_aggregate(team_name: str) -> bool:
 # FBref: carga y merge de stat_types
 # ---------------------------------------------------------------------------
 
+_NATIVE_STAT_TYPES = {"standard", "keeper", "shooting", "playing_time", "misc"}
+
+
 def _load_stat(fbref: sd.FBref, stat_type: str) -> pd.DataFrame:
+    """
+    Carga un stat_type de FBref.
+    - Tipos nativos (standard, misc, …): delega en soccerdata.
+    - Tipos extendidos (possession, passing, …): usa los internals de soccerdata
+      para buscar la tabla dentro del comentario HTML <!--div_stats_<type>-->.
+    """
     log.info("    stat_type='%s'...", stat_type)
+
+    if stat_type in _NATIVE_STAT_TYPES:
+        try:
+            df = _flatten(fbref.read_player_season_stats(stat_type=stat_type).reset_index())
+            log.info("      %d filas, %d columnas.", len(df), len(df.columns))
+            return df
+        except Exception as e:
+            log.warning("    No disponible '%s': %s", stat_type, e)
+            return pd.DataFrame()
+
+    # ── Tipos extendidos: possession, passing, etc. ──────────────────────────
+    from soccerdata.fbref import FBREF_API, _parse_table, _fix_nation_col
+    from lxml import html as lxhtml, etree
+
     try:
-        df = _flatten(fbref.read_player_season_stats(stat_type=stat_type).reset_index())
+        seasons = fbref.read_seasons()
+        frames = []
+        filemask = "players_{}_{}_{}.html"
+        for (lkey, skey), season in seasons.iterrows():
+            filepath = fbref.data_dir / filemask.format(lkey, skey, stat_type)
+            url = (
+                FBREF_API
+                + "/".join(season.url.split("/")[:-1])
+                + f"/{stat_type}/"
+                + season.url.split("/")[-1]
+            )
+            reader = fbref.get(url, filepath)
+            tree = lxhtml.parse(reader)
+            comments = tree.xpath(f"//comment()[contains(.,'div_stats_{stat_type}')]")
+            if not comments:
+                log.warning("      Sin comentario div_stats_%s", stat_type)
+                continue
+            parser = etree.HTMLParser(recover=True)
+            tables = etree.fromstring(comments[0].text, parser).xpath(
+                f"//table[contains(@id, 'stats_{stat_type}')]"
+            )
+            if not tables:
+                log.warning("      Sin tabla stats_%s en el comentario", stat_type)
+                continue
+            df_t = _parse_table(tables[0])
+            df_t[("Unnamed: league", "league")] = lkey
+            df_t[("Unnamed: season", "season")] = skey
+            df_t = _fix_nation_col(df_t)
+            frames.append(df_t)
+
+        if not frames:
+            return pd.DataFrame()
+
+        df = pd.concat(frames).reset_index(drop=True)
+        df = _flatten(df)
+
+        # Normalizar Player/Squad a player/team para que JOIN_ON funcione
+        rename = {}
+        for col in df.columns:
+            lc = col.lower()
+            if lc == "player" or lc.endswith("__player"):
+                rename[col] = "player"
+            elif lc == "squad" or lc.endswith("__squad"):
+                rename[col] = "team"
+        if rename:
+            df = df.rename(columns=rename)
+
         log.info("      %d filas, %d columnas.", len(df), len(df.columns))
         return df
     except Exception as e:
-        log.warning("    No disponible '%s': %s", stat_type, e)
+        log.warning("    Error '%s': %s", stat_type, e)
         return pd.DataFrame()
 
 
@@ -125,15 +195,28 @@ def build_merged(fbref: sd.FBref) -> pd.DataFrame:
     if df_std.empty:
         return df_std
 
+    merged = df_std.copy()
+
     if not df_misc.empty:
         misc_cols = JOIN_ON + [
             c for c in ["Performance__TklW", "Performance__Int"]
             if c in df_misc.columns
         ]
-        df_misc_slim = df_misc[misc_cols]
-        merged = df_std.merge(df_misc_slim, on=JOIN_ON, how="left", suffixes=("", "_misc"))
-    else:
-        merged = df_std.copy()
+        merged = merged.merge(df_misc[misc_cols], on=JOIN_ON, how="left", suffixes=("", "_misc"))
+
+    df_poss = _load_stat(fbref, "possession")
+    if not df_poss.empty:
+        # Dribbles__Succ → regates (successful take-ons)
+        poss_want = [c for c in ["Dribbles__Succ", "Takes-On__Succ"] if c in df_poss.columns]
+        if poss_want:
+            merged = merged.merge(df_poss[JOIN_ON + poss_want], on=JOIN_ON, how="left", suffixes=("", "_poss"))
+
+    df_pass = _load_stat(fbref, "passing")
+    if not df_pass.empty:
+        # Total__Cmp% → pases_completados
+        pass_want = [c for c in ["Total__Cmp%"] if c in df_pass.columns]
+        if pass_want:
+            merged = merged.merge(df_pass[JOIN_ON + pass_want], on=JOIN_ON, how="left", suffixes=("", "_pass"))
 
     log.info("    Merged: %d filas, %d columnas.", len(merged), len(merged.columns))
     return merged
@@ -161,14 +244,24 @@ def get_liga_id() -> int:
 def load_jugadores_map() -> dict:
     """
     Devuelve {nombre_normalizado: jugador_id} para todos los jugadores en Supabase.
-    Si hay duplicados de nombre, conserva el primer id encontrado.
+    Pagina en bloques de 1000 para superar el limite de PostgREST.
     """
-    res = supabase.table("jugadores").select("id, nombre").execute()
     mapping: dict[str, int] = {}
-    for r in res.data:
-        key = _norm(r["nombre"])
-        if key and key not in mapping:
-            mapping[key] = r["id"]
+    page_size, offset = 1000, 0
+    while True:
+        res = (
+            supabase.table("jugadores")
+            .select("id, nombre")
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        for r in res.data:
+            key = _norm(r["nombre"])
+            if key and key not in mapping:
+                mapping[key] = r["id"]
+        if len(res.data) < page_size:
+            break
+        offset += page_size
     log.info("Jugadores existentes en DB: %d", len(mapping))
     return mapping
 
@@ -282,6 +375,12 @@ def upsert_estadisticas(
         ints  = _int(row.get("Performance__Int"))
         recup = (tklw or 0) + (ints or 0) if (tklw is not None or ints is not None) else None
 
+        # possession stat: successful dribbles/take-ons
+        regates_val = _int(row.get("Dribbles__Succ") or row.get("Takes-On__Succ"))
+
+        # passing stat: pass completion %
+        pases_val = _float(row.get("Total__Cmp%"), 1)
+
         rows.append({
             "jugador_id":         jugador_id,
             "temporada":          temporada,
@@ -295,8 +394,8 @@ def upsert_estadisticas(
             "recuperaciones":     recup,
             "xg":                 None,
             "xa":                 None,
-            "pases_completados":  None,
-            "regates":            None,
+            "pases_completados":  pases_val,
+            "regates":            regates_val,
             "presiones":          None,
         })
 
@@ -332,9 +431,19 @@ def upsert_estadisticas(
 # Entrypoint
 # ---------------------------------------------------------------------------
 
-def run():
+def run(solo_temporada: str | None = None):
+    temporadas = TEMPORADAS
+    if solo_temporada:
+        temporadas = [(k, t) for k, t in TEMPORADAS if t == solo_temporada]
+        if not temporadas:
+            validas = [t for _, t in TEMPORADAS]
+            log.error("Temporada '%s' no válida. Opciones: %s", solo_temporada, validas)
+            return
+
     log.info("=" * 62)
-    log.info(" FBref Histórico — LaLiga (2020/21 – 2024/25)")
+    log.info(" FBref Historico - LaLiga (2020/21 - 2024/25)")
+    if solo_temporada:
+        log.info(" Solo temporada: %s", solo_temporada)
     log.info("=" * 62)
 
     liga_id     = get_liga_id()
@@ -343,11 +452,11 @@ def run():
     total_stats = 0
     procesadas  = 0
 
-    for fbref_key, temporada in TEMPORADAS:
+    for fbref_key, temporada in temporadas:
         log.info("")
-        log.info("─" * 62)
+        log.info("-" * 62)
         log.info(" Temporada %s  (FBref key: %s)", temporada, fbref_key)
-        log.info("─" * 62)
+        log.info("-" * 62)
 
         try:
             fbref = sd.FBref(leagues=FBREF_LIGA, seasons=fbref_key)
@@ -357,7 +466,7 @@ def run():
             continue
 
         if df.empty:
-            log.warning("  DataFrame vacío, saltando temporada %s.", temporada)
+            log.warning("  DataFrame vacio, saltando temporada %s.", temporada)
             continue
 
         # Equipos reales de esta temporada (excluir filas agregadas)
@@ -371,16 +480,24 @@ def run():
 
         total_stats += n
         procesadas  += 1
-        log.info("  ✓ Temporada %s completada: %d estadísticas.", temporada, n)
+        log.info("  OK Temporada %s completada: %d estadisticas.", temporada, n)
 
     log.info("")
     log.info("=" * 62)
     log.info(" RESUMEN FINAL")
-    log.info("  Temporadas procesadas : %d / %d", procesadas, len(TEMPORADAS))
-    log.info("  Total estadísticas    : %d", total_stats)
+    log.info("  Temporadas procesadas : %d / %d", procesadas, len(temporadas))
+    log.info("  Total estadisticas    : %d", total_stats)
     log.info("  Jugadores en mapa     : %d", len(jugador_map))
     log.info("=" * 62)
 
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser(description="FBref histórico scraper — LaLiga")
+    parser.add_argument(
+        "--temporada",
+        metavar="YYYY",
+        choices=[t for _, t in TEMPORADAS],
+        help="Procesar solo esta temporada (ej: --temporada 2425)",
+    )
+    args = parser.parse_args()
+    run(solo_temporada=args.temporada)

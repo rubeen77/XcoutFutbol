@@ -14,6 +14,7 @@ Pasos:
 """
 
 import sys
+import math
 import logging
 import unicodedata
 from pathlib import Path
@@ -30,6 +31,13 @@ LIGA_ID      = 1       # LaLiga insertada en la fase anterior
 TEMPORADA    = "2526"
 UNDERSTAT_LIGA    = "ESP-La Liga"
 UNDERSTAT_SEASON  = 2025   # Understat usa el año de inicio de temporada
+
+# Nombres que Understat no acentúa o abrevia diferente a Supabase
+MANUAL_NAME_MAP = {
+    "kylian mbappe-lottin": "kylian mbappe",  # Understat usa apellido compuesto
+    "cucho hernandez":      "cucho",           # apodo en Supabase
+    "kike garcia":          "kike",            # apodo en Supabase (Espanyol)
+}
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +65,7 @@ def load_understat() -> pd.DataFrame:
 
     df["player_norm"] = df["player"].apply(_norm)
     df["team_norm"]   = df["team"].apply(_norm)
+    df["player_norm"] = df["player_norm"].map(lambda n: MANUAL_NAME_MAP.get(n, n))
     return df
 
 
@@ -114,36 +123,48 @@ def load_supabase_stats() -> pd.DataFrame:
 # Cruce de nombres FBref ↔ Understat
 # ---------------------------------------------------------------------------
 
-def build_xg_map(df_understat: pd.DataFrame) -> dict:
+def _lastname(norm_name: str) -> str:
+    """Último token del nombre normalizado ('kylian mbappe' → 'mbappe')."""
+    parts = norm_name.split()
+    return parts[-1] if parts else norm_name
+
+
+def build_xg_map(df_understat: pd.DataFrame) -> tuple[dict, dict, dict]:
     """
-    Devuelve {(player_norm, team_norm): (xg, xa)} desde Understat.
-    También índice secundario {player_norm: (xg, xa)} para fallback.
+    Devuelve tres índices desde Understat:
+      exact    : {(player_norm, team_norm): (xg, xa)}
+      by_name  : {player_norm: (xg, xa)}             — fallback tier 2
+      by_last  : {lastname: (xg, xa)}                — fallback tier 3
     """
-    exact  = {}
-    by_name = {}
+    exact    = {}
+    by_name  = {}
+    by_last  = {}
     for _, row in df_understat.iterrows():
         key = (row["player_norm"], row["team_norm"])
         val = (
             round(float(row["xg"]), 3) if pd.notna(row["xg"]) else None,
             round(float(row["xa"]), 3) if pd.notna(row["xa"]) else None,
         )
-        exact[key]             = val
-        by_name[row["player_norm"]] = val   # último gana si hay duplicados de nombre
-    return exact, by_name
+        exact[key]                          = val
+        by_name[row["player_norm"]]         = val
+        by_last[_lastname(row["player_norm"])] = val
+    return exact, by_name, by_last
 
 
 def merge_xg(df_supabase: pd.DataFrame, df_understat: pd.DataFrame) -> pd.DataFrame:
     log.info("[3/4] Cruzando nombres FBref <-> Understat...")
-    exact_map, name_map = build_xg_map(df_understat)
+    exact_map, name_map, last_map = build_xg_map(df_understat)
 
-    matched_exact   = 0
+    matched_exact    = 0
     matched_fallback = 0
-    unmatched       = 0
+    matched_last     = 0
+    unmatched_names  = []
 
     xg_list, xa_list = [], []
 
     for _, row in df_supabase.iterrows():
-        key = (row["player_norm"], row["team_norm"])
+        key  = (row["player_norm"], row["team_norm"])
+        last = _lastname(row["player_norm"])
 
         if key in exact_map:
             xg, xa = exact_map[key]
@@ -151,9 +172,12 @@ def merge_xg(df_supabase: pd.DataFrame, df_understat: pd.DataFrame) -> pd.DataFr
         elif row["player_norm"] in name_map:
             xg, xa = name_map[row["player_norm"]]
             matched_fallback += 1
+        elif last in last_map:
+            xg, xa = last_map[last]
+            matched_last += 1
         else:
             xg, xa = None, None
-            unmatched += 1
+            unmatched_names.append(f"{row['player_nombre']} [{row['player_norm']}]")
 
         xg_list.append(xg)
         xa_list.append(xa)
@@ -164,13 +188,44 @@ def merge_xg(df_supabase: pd.DataFrame, df_understat: pd.DataFrame) -> pd.DataFr
 
     log.info("      Match exacto (nombre+equipo): %d", matched_exact)
     log.info("      Match por nombre solo        : %d", matched_fallback)
-    log.info("      Sin match                    : %d", unmatched)
-    return df_supabase, matched_exact + matched_fallback
+    log.info("      Match por apellido           : %d", matched_last)
+    log.info("      Sin match                    : %d", len(unmatched_names))
+    if unmatched_names:
+        log.info("      Jugadores sin match:")
+        for n in unmatched_names:
+            log.info("        - %s", n)
+    return df_supabase, matched_exact + matched_fallback + matched_last
 
 
 # ---------------------------------------------------------------------------
 # Upsert batch a Supabase — un solo request
 # ---------------------------------------------------------------------------
+
+def _safe_int(v):
+    """Convierte a Python int; devuelve None si es NaN/inf/None."""
+    if v is None:
+        return None
+    try:
+        f = float(v)  # float() convierte numpy scalars a Python float
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(f) or math.isinf(f):
+        return None
+    return int(f)
+
+
+def _safe_float(v, dec=3):
+    """Convierte a Python float redondeado; devuelve None si es NaN/inf/None."""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(f) or math.isinf(f):
+        return None
+    return round(f, dec)
+
 
 def upsert_xg(df: pd.DataFrame) -> int:
     log.info("[4/4] Actualizando xG/xA en Supabase (batch unico)...")
@@ -181,23 +236,14 @@ def upsert_xg(df: pd.DataFrame) -> int:
 
     rows = []
     for _, row in df_update.iterrows():
+        # Solo enviar las claves del conflicto + xg/xa.
+        # Supabase UPDATE SET deja el resto de columnas sin tocar.
         rows.append({
-            "jugador_id":         int(row["jugador_id"]),
-            "temporada":          row["temporada"],
-            "liga_id":            int(row["liga_id"]),
-            "xg":                 row["xg"],
-            "xa":                 row["xa"],
-            # Preservar campos existentes para no machacarlos con NULL
-            "goles":              row.get("goles"),
-            "asistencias":        row.get("asistencias"),
-            "minutos":            row.get("minutos"),
-            "pases_completados":  row.get("pases_completados"),
-            "regates":            row.get("regates"),
-            "presiones":          row.get("presiones"),
-            "recuperaciones":     row.get("recuperaciones"),
-            "goles_por_90":       row.get("goles_por_90"),
-            "asistencias_por_90": row.get("asistencias_por_90"),
-            "ga_por_90":          row.get("ga_por_90"),
+            "jugador_id": int(row["jugador_id"]),
+            "temporada":  row["temporada"],
+            "liga_id":    int(row["liga_id"]),
+            "xg":         _safe_float(row["xg"]),
+            "xa":         _safe_float(row["xa"]),
         })
 
     res = (

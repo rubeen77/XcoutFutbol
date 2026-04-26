@@ -149,7 +149,7 @@ export default function Navbar() {
 
   useEffect(() => {
     function ping() {
-      fetch('http://localhost:8080/health')
+      fetch('http://localhost:8000/health')
         .then(r => setBackendOk(r.ok))
         .catch(() => setBackendOk(false))
     }

@@ -41,18 +41,37 @@ LIGA_ID          = 1
 TM_SEASON        = 2025          # año de inicio de la temporada en Transfermarkt
 TM_LIGA_CODE     = "ES1"         # código de LaLiga en Transfermarkt
 CARGAR_HISTORIAL = True           # activar para cargar historial multi-temporada
-REQUEST_DELAY    = 1.2            # segundos entre requests (evitar ban)
+REQUEST_DELAY    = 2.0            # segundos entre requests (evitar ban)
 
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
+        "Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept-Language": "es-ES,es;q=0.9",
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,image/apng,*/*;q=0.8"
+    ),
+    "Accept-Language":   "es-ES,es;q=0.9,en;q=0.8",
+    "Accept-Encoding":   "gzip, deflate, br",
+    "Connection":        "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest":    "document",
+    "Sec-Fetch-Mode":    "navigate",
+    "Sec-Fetch-Site":    "none",
+    "Sec-Fetch-User":    "?1",
+    "sec-ch-ua":         '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    "sec-ch-ua-mobile":  "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "Referer":           "https://www.transfermarkt.es/",
 }
 
 TM_BASE = "https://www.transfermarkt.es"
+
+# Sesión compartida: mantiene cookies entre requests como un navegador real
+_session = requests.Session()
+_session.headers.update(HEADERS)
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +110,7 @@ def _parse_valor(text: str) -> Optional[float]:
 
 def _get(url: str) -> Optional[BeautifulSoup]:
     try:
-        r = requests.get(url, headers=HEADERS, timeout=15)
+        r = _session.get(url, timeout=15)
         if r.status_code != 200:
             log.warning("  HTTP %d para %s", r.status_code, url)
             return None
@@ -246,42 +265,38 @@ def _date_to_temporada(date_str: str) -> Optional[str]:
 
 def scrape_market_history(player_url: str) -> list[dict]:
     """
-    Extrae historial de valor de mercado desde la página TM del jugador.
-    Devuelve una lista de {temporada: 'YYZZ', valor: float (millones €)}.
+    Extrae historial de valor de mercado via ceapi de TM.
+    Devuelve lista de {temporada: 'YYZZ', valor: float (millones €)}.
     Deduplica por temporada: conserva el último valor registrado en cada una.
     """
-    url = player_url.replace("/profil/", "/marktwertverlauf/")
-    soup = _get(url)
-    if not soup:
+    m = re.search(r"/spieler/(\d+)", player_url)
+    if not m:
+        return []
+    player_id = m.group(1)
+
+    api_url = f"https://www.transfermarkt.es/ceapi/marketValueDevelopment/graph/{player_id}"
+    try:
+        r = requests.get(api_url, headers=HEADERS, timeout=15)
+        if r.status_code != 200:
+            log.warning("  ceapi HTTP %d para jugador %s", r.status_code, player_id)
+            return []
+        entries = r.json().get("list", [])
+    except Exception as e:
+        log.warning("  ceapi error jugador %s: %s", player_id, e)
         return []
 
-    for script in soup.find_all("script"):
-        text = script.string or ""
-        if "datum" not in text:
+    # Agrupar por temporada: el último valor de cada temporada gana
+    by_temp: dict[str, float] = {}
+    for entry in entries:
+        datum = entry.get("datum_mw", "")
+        y     = entry.get("y")
+        if not datum or y is None:
             continue
+        temp = _date_to_temporada(datum)
+        if temp:
+            by_temp[temp] = round(float(y) / 1_000_000, 3)
 
-        # Extraer valores y fechas por separado (evita problemas con llaves anidadas)
-        y_vals  = re.findall(r"[{,]\s*['\"]?y['\"]?\s*:\s*(\d+)", text)
-        d_vals  = re.findall(r"datum\s*:\s*['\"]([^'\"]+)['\"]", text)
-
-        if not y_vals or not d_vals:
-            continue
-        if len(y_vals) != len(d_vals):
-            # Intentar parear los que coincidan en cantidad
-            n = min(len(y_vals), len(d_vals))
-            y_vals, d_vals = y_vals[:n], d_vals[:n]
-
-        # Agrupar por temporada: el último valor de cada temporada gana
-        by_temp: dict[str, float] = {}
-        for y_str, datum in zip(y_vals, d_vals):
-            temp = _date_to_temporada(datum)
-            if temp:
-                by_temp[temp] = round(float(y_str) / 1_000_000, 3)
-
-        if by_temp:
-            return [{"temporada": t, "valor": v} for t, v in by_temp.items()]
-
-    return []
+    return [{"temporada": t, "valor": v} for t, v in by_temp.items()]
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +396,8 @@ def upsert_jugadores(df: pd.DataFrame) -> int:
             row["foto_url"] = r["foto_url"]
         if pd.notna(r.get("valor_mercado")):
             row["valor_mercado"] = float(r["valor_mercado"])
+        if pd.notna(r.get("player_url")):
+            row["tm_url"] = r["player_url"]
         rows.append(row)
 
     res = supabase.table("jugadores").upsert(rows, on_conflict="id").execute()
