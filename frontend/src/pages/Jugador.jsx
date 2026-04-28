@@ -7,7 +7,7 @@ import {
 } from 'recharts'
 import { jugadores as jugadoresFallback } from '../data/jugadores'
 import { getJugador } from '../services/api'
-import PlayerRadarChart from '../components/RadarChart'
+import PlayerRadarChart, { getAxes } from '../components/RadarChart'
 import { JugadorSkeleton } from '../components/Skeletons'
 import { useCountUp } from '../hooks/useCountUp'
 
@@ -20,6 +20,12 @@ const THRESHOLDS = {
   pases_completados: { max: 95,   good: 85,  ok: 74 },
   regates:           { max: 120,  good: 60,  ok: 25 },
   recuperaciones:    { max: 80,   good: 40,  ok: 18 },
+  intercepciones:    { max: 100,  good: 55,  ok: 25 },
+  entradas:          { max: 80,   good: 45,  ok: 20 },
+  tiros_totales:     { max: 120,  good: 60,  ok: 25 },
+  tiros_a_puerta:    { max: 60,   good: 30,  ok: 12 },
+  portero_paradas:        { max: 100,  good: 60,  ok: 30 },
+  portero_paradas_pct:    { max: 1,    good: 0.75, ok: 0.65 },
   goles_por_90:      { max: 1.2,  good: 0.6, ok: 0.3 },
   asistencias_por_90:{ max: 0.8,  good: 0.4, ok: 0.2 },
   ga_por_90:         { max: 1.8,  good: 0.9, ok: 0.5 },
@@ -29,6 +35,13 @@ const METRICA_LABELS = {
   goles: 'Goles', asistencias: 'Asistencias', xG: 'xG', xA: 'xA',
   pases_completados: 'Pases %', regates: 'Regates',
   recuperaciones: 'Recuperaciones',
+  intercepciones: 'Intercepciones',
+  entradas: 'Entradas',
+  tiros_totales: 'Tiros totales',
+  tiros_a_puerta: 'Tiros a puerta',
+  portero_paradas: 'Paradas',
+  portero_goles_encajados: 'Goles encajados',
+  portero_paradas_pct: '% Paradas',
   minutos_jugados: 'Minutos jugados',
   goles_por_90: 'Goles / 90 min',
   asistencias_por_90: 'Asistencias / 90 min',
@@ -73,6 +86,13 @@ function adaptarPerfilJugador(raw) {
           pases_completados:  s.pases_completados ?? null,
           regates:            s.regates           ?? null,
           recuperaciones:     s.recuperaciones    ?? null,
+          intercepciones:     s.intercepciones    ?? null,
+          entradas:           s.entradas          ?? null,
+          tiros_totales:      s.tiros_totales     ?? null,
+          tiros_a_puerta:     s.tiros_a_puerta    ?? null,
+          portero_paradas:         s.portero_paradas         ?? null,
+          portero_goles_encajados: s.portero_goles_encajados ?? null,
+          portero_paradas_pct:     s.portero_paradas_pct     ?? null,
           minutos_jugados:    mins,
           goles_por_90:       s.goles_por_90        ?? (mins && goles != null ? p90(goles, mins)          : null),
           asistencias_por_90: s.asistencias_por_90  ?? (mins && asists != null ? p90(asists, mins)        : null),
@@ -93,6 +113,13 @@ function adaptarPerfilJugador(raw) {
     pases_completados:  latest.pases_completados || 0,
     regates:            latest.regates      || 0,
     recuperaciones:     latest.recuperaciones || 0,
+    intercepciones:     latest.intercepciones    || 0,
+    entradas:           latest.entradas          || 0,
+    tiros_totales:      latest.tiros_totales     || 0,
+    tiros_a_puerta:     latest.tiros_a_puerta    || 0,
+    portero_paradas:         latest.portero_paradas         || 0,
+    portero_goles_encajados: latest.portero_goles_encajados || 0,
+    portero_paradas_pct:     latest.portero_paradas_pct     || 0,
     minutos_jugados:    minutos,
     goles_por_90:       latest.goles_por_90        ?? p90(goles, minutos),
     asistencias_por_90: latest.asistencias_por_90  ?? p90(asis, minutos),
@@ -149,6 +176,13 @@ function metricasDesdeTemporada(t) {
     pases_completados:  t.pases_completados ?? 0,
     regates:            t.regates           ?? 0,
     recuperaciones:     t.recuperaciones    ?? 0,
+    intercepciones:     t.intercepciones    ?? 0,
+    entradas:           t.entradas          ?? 0,
+    tiros_totales:      t.tiros_totales     ?? 0,
+    tiros_a_puerta:     t.tiros_a_puerta    ?? 0,
+    portero_paradas:         t.portero_paradas         ?? 0,
+    portero_goles_encajados: t.portero_goles_encajados ?? 0,
+    portero_paradas_pct:     t.portero_paradas_pct     ?? 0,
     minutos_jugados:    min,
     goles_por_90:       t.goles_por_90        ?? (min ? p90(g, min) : 0),
     asistencias_por_90: t.asistencias_por_90  ?? (min ? p90(a, min) : 0),
@@ -446,9 +480,18 @@ export default function Jugador() {
 
         <div className="relative flex flex-col sm:flex-row gap-6 sm:items-start">
           {/* Avatar */}
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500/25 to-blue-700/25
-                          border border-cyan-500/20 flex items-center justify-center shrink-0">
+          <div className="relative w-24 h-32 rounded-2xl bg-gradient-to-br from-cyan-500/25 to-blue-700/25
+                          border border-cyan-500/20 flex items-center justify-center shrink-0 overflow-hidden">
             <span className="text-2xl font-black text-cyan-400">{initials}</span>
+            {jugador.foto_url && (
+              <img
+                src={jugador.foto_url}
+                alt={jugador.nombre}
+                referrerPolicy="no-referrer"
+                className="absolute inset-0 w-full h-full object-cover object-top"
+                onError={e => e.currentTarget.remove()}
+              />
+            )}
           </div>
 
           {/* Info */}
@@ -536,10 +579,21 @@ export default function Jugador() {
           Temporada {labelTemporada}
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatPill label="Goles"       value={metricasActivas.goles}       sub="en la temporada" />
-          <StatPill label="Asistencias" value={metricasActivas.asistencias} sub="en la temporada" />
-          <StatPill label="xG"          value={metricasActivas.xG}          sub="expected goals" />
-          <StatPill label="xA"          value={metricasActivas.xA}          sub="expected assists" />
+          {jugador.posicion === 'Portero' ? (
+            <>
+              <StatPill label="Paradas"      value={metricasActivas.portero_paradas}         sub="en la temporada" />
+              <StatPill label="Goles enc."   value={metricasActivas.portero_goles_encajados} sub="en la temporada" />
+              <StatPill label="Paradas %"    value={Math.round((metricasActivas.portero_paradas_pct || 0) * 100)} sub="efectividad" />
+              <StatPill label="Minutos"      value={metricasActivas.minutos_jugados}         sub="jugados" />
+            </>
+          ) : (
+            <>
+              <StatPill label="Goles"       value={metricasActivas.goles}       sub="en la temporada" />
+              <StatPill label="Asistencias" value={metricasActivas.asistencias} sub="en la temporada" />
+              <StatPill label="xG"          value={metricasActivas.xG}          sub="expected goals" />
+              <StatPill label="xA"          value={metricasActivas.xA}          sub="expected assists" />
+            </>
+          )}
         </div>
       </div>
 
@@ -738,7 +792,7 @@ export default function Jugador() {
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-4">
             Perfil de rendimiento — {labelTemporada}
           </p>
-          <PlayerRadarChart metricas={metricasActivas} />
+          <PlayerRadarChart metricas={metricasActivas} axes={getAxes(jugador.posicion)} />
         </div>
 
         {/* Metric bars */}
@@ -747,7 +801,9 @@ export default function Jugador() {
             Métricas {labelTemporada}
           </p>
           <div className="space-y-1">
-            {Object.entries(metricasActivas).map(([key, value]) => {
+            {[...getAxes(jugador.posicion), 'minutos_jugados'].filter((k, i, arr) => arr.indexOf(k) === i).map(key => {
+              const value = metricasActivas[key]
+              if (value === undefined) return null
               const label = METRICA_LABELS[key]
               if (!label) return null
               const t        = THRESHOLDS[key]
@@ -758,6 +814,9 @@ export default function Jugador() {
                              : col.includes('red')   ? 'bg-red-500'
                              : 'bg-slate-600'
               const showBar  = !SIN_BARRA.has(key) && t
+              const display  = key === 'minutos_jugados'   ? value.toLocaleString('es')
+                             : key === 'portero_paradas_pct' ? `${Math.round(value * 100)}%`
+                             : value
               return (
                 <div key={key}
                      className="flex items-center gap-3 py-2.5 border-b border-slate-800/50 last:border-0">
@@ -772,7 +831,7 @@ export default function Jugador() {
                   <span className={`text-sm font-black w-12 text-right tabular-nums ${
                     SIN_BARRA.has(key) ? 'text-slate-300' : col
                   }`}>
-                    {key === 'minutos_jugados' ? value.toLocaleString('es') : value}
+                    {display}
                   </span>
                 </div>
               )

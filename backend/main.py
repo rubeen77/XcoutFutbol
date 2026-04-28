@@ -8,7 +8,7 @@ Arrancar:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import players, teams, matches
+from routers import players, teams, matches, insights
 
 app = FastAPI(
     title="Xcout API",
@@ -18,7 +18,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://127.0.0.1:5173", "http://127.0.0.1:5174"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -26,7 +26,8 @@ app.add_middleware(
 
 app.include_router(players.router, prefix="/jugadores", tags=["jugadores"])
 app.include_router(teams.router,   prefix="/equipos",   tags=["equipos"])
-app.include_router(matches.router, prefix="/partidos",  tags=["partidos"])
+app.include_router(matches.router,  prefix="/partidos",  tags=["partidos"])
+app.include_router(insights.router, prefix="/insights",  tags=["insights"])
 
 
 @app.get("/health", tags=["sistema"])

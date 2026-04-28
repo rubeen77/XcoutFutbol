@@ -1,20 +1,18 @@
 """
 Transfermarkt Scraper — fotos y valor de mercado para LaLiga 2025/26
 
-Fuente: Transfermarkt.es (scraping directo con requests + BeautifulSoup)
-Soccerdata no incluye Transfermarkt en la version instalada.
+Fuente: Transfermarkt.es (cloudscraper maneja Cloudflare + browser fingerprint)
 
-Estrategia (mínimo de requests):
-  1. 1 request  → LaLiga page → 20 IDs de equipo
-  2. 20 requests → plantilla de cada equipo → nombre, foto, valor actual
+Estrategia (minimo de requests):
+  1.  1 request  -> LaLiga page -> 20 IDs de equipo
+  2. 20 requests -> plantilla de cada equipo -> nombre, foto, valor actual
   3. Cruce por nombre normalizado con jugadores en Supabase
-  4. 1 request  → upsert batch jugadores (foto + valor)
-  5. 1 request  → upsert batch valor_mercado_historia (valor temporada actual)
+  4.  1 request  -> upsert batch jugadores (foto + valor)
+  5.  1 request  -> upsert batch valor_mercado_historia (temporada actual)
   Total: ~23 requests HTTP
 
 Historial multi-temporada: requiere 1 request por jugador (~586).
-Implementado pero desactivado por defecto (CARGAR_HISTORIAL = False).
-Activar solo en ejecuciones nocturnas con rate limit.
+Activado con CARGAR_HISTORIAL = True. Usar con rate limit adecuado.
 """
 
 import re
@@ -26,7 +24,7 @@ import unicodedata
 from pathlib import Path
 from typing import Optional
 
-import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 import pandas as pd
 
@@ -38,40 +36,17 @@ log = logging.getLogger(__name__)
 
 TEMPORADA        = "2526"
 LIGA_ID          = 1
-TM_SEASON        = 2025          # año de inicio de la temporada en Transfermarkt
-TM_LIGA_CODE     = "ES1"         # código de LaLiga en Transfermarkt
-CARGAR_HISTORIAL = True           # activar para cargar historial multi-temporada
-REQUEST_DELAY    = 2.0            # segundos entre requests (evitar ban)
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": (
-        "text/html,application/xhtml+xml,application/xml;q=0.9,"
-        "image/avif,image/webp,image/apng,*/*;q=0.8"
-    ),
-    "Accept-Language":   "es-ES,es;q=0.9,en;q=0.8",
-    "Accept-Encoding":   "gzip, deflate, br",
-    "Connection":        "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest":    "document",
-    "Sec-Fetch-Mode":    "navigate",
-    "Sec-Fetch-Site":    "none",
-    "Sec-Fetch-User":    "?1",
-    "sec-ch-ua":         '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-    "sec-ch-ua-mobile":  "?0",
-    "sec-ch-ua-platform": '"Windows"',
-    "Referer":           "https://www.transfermarkt.es/",
-}
+TM_SEASON        = 2025
+TM_LIGA_CODE     = "ES1"
+CARGAR_HISTORIAL = True
+REQUEST_DELAY    = 2.0
 
 TM_BASE = "https://www.transfermarkt.es"
 
-# Sesión compartida: mantiene cookies entre requests como un navegador real
-_session = requests.Session()
-_session.headers.update(HEADERS)
+# cloudscraper imita un navegador real y resuelve desafios Cloudflare
+_scraper = cloudscraper.create_scraper(
+    browser={"browser": "chrome", "platform": "windows", "mobile": False}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +54,6 @@ _session.headers.update(HEADERS)
 # ---------------------------------------------------------------------------
 
 def _norm(text: str) -> str:
-    """Sin acentos, minúsculas, espacios colapsados."""
     if not text:
         return ""
     nfkd = unicodedata.normalize("NFKD", str(text))
@@ -89,9 +63,9 @@ def _norm(text: str) -> str:
 def _parse_valor(text: str) -> Optional[float]:
     """
     Convierte texto TM a millones de euros:
-      "18,00 mill."  → 18.0
-      "500 mil"      → 0.5
-      "-"            → None
+      "18,00 mill."  -> 18.0
+      "500 mil"      -> 0.5
+      "-"            -> None
     """
     if not text or text.strip() in ("-", ""):
         return None
@@ -110,7 +84,7 @@ def _parse_valor(text: str) -> Optional[float]:
 
 def _get(url: str) -> Optional[BeautifulSoup]:
     try:
-        r = _session.get(url, timeout=15)
+        r = _scraper.get(url, timeout=20)
         if r.status_code != 200:
             log.warning("  HTTP %d para %s", r.status_code, url)
             return None
@@ -129,7 +103,7 @@ def get_team_ids() -> list[dict]:
     url = f"{TM_BASE}/laliga/startseite/wettbewerb/{TM_LIGA_CODE}/saison_id/{TM_SEASON}"
     soup = _get(url)
     if not soup:
-        raise RuntimeError("No se pudo cargar la página de LaLiga en Transfermarkt")
+        raise RuntimeError("No se pudo cargar la pagina de LaLiga en Transfermarkt")
 
     teams = []
     seen = set()
@@ -145,8 +119,8 @@ def get_team_ids() -> list[dict]:
             continue
         seen.add(team_id)
         teams.append({
-            "name":    name,
-            "tm_id":   team_id,
+            "name":      name,
+            "tm_id":     team_id,
             "kader_url": f"{TM_BASE}{slug_path.replace('/startseite/', '/kader/')}/saison_id/{TM_SEASON}",
         })
 
@@ -173,17 +147,16 @@ def scrape_squad(team: dict) -> list[dict]:
         if not name_el:
             continue
 
-        name  = name_el.text.strip()
-        foto  = None
+        name = name_el.text.strip()
+
+        foto = None
         if img_el:
             foto = img_el.get("data-src") or img_el.get("src")
-            # Cambiar tamaño medium → big para mayor calidad
             if foto:
                 foto = foto.replace("/medium/", "/big/")
 
         valor = _parse_valor(val_el.text if val_el else "")
 
-        # URL del perfil del jugador (para historial)
         player_url = None
         for a in player_a:
             href = a.get("href", "")
@@ -192,12 +165,12 @@ def scrape_squad(team: dict) -> list[dict]:
                 break
 
         players.append({
-            "nombre":       name,
-            "nombre_norm":  _norm(name),
-            "equipo_tm":    team["name"],
-            "foto_url":     foto,
+            "nombre":        name,
+            "nombre_norm":   _norm(name),
+            "equipo_tm":     team["name"],
+            "foto_url":      foto,
             "valor_mercado": valor,
-            "player_url":   player_url,
+            "player_url":    player_url,
         })
 
     return players
@@ -223,21 +196,14 @@ def scrape_all_squads(teams: list[dict]) -> pd.DataFrame:
 # Paso 3 (opcional): historial multi-temporada por jugador
 # ---------------------------------------------------------------------------
 
-# Abreviaturas de mes en varios idiomas que usa TM
 _MONTH_ABBR = {
-    "jan": 1, "ene": 1, "feb": 2, "mar": 3, "mär": 3, "abr": 4, "apr": 4,
+    "jan": 1, "ene": 1, "feb": 2, "mar": 3, "mar": 3, "abr": 4, "apr": 4,
     "may": 5, "mai": 5, "jun": 6, "jul": 7, "ago": 8, "aug": 8,
     "sep": 9, "okt": 10, "oct": 10, "nov": 11, "dic": 12, "dez": 12, "dec": 12,
 }
 
 
 def _date_to_temporada(date_str: str) -> Optional[str]:
-    """
-    Convierte una fecha TM en código de temporada YYZZ.
-    Julio–diciembre → inicio de temporada; enero–junio → fin de temporada.
-      "Sep 12, 2023" → "2324"   (temporada 2023/24)
-      "Mar 15, 2024" → "2324"   (temporada 2023/24, antes de julio)
-    """
     s = date_str.strip()
     for fmt in ("%b %d, %Y", "%b. %d, %Y", "%d. %b %Y", "%d. %b. %Y",
                 "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
@@ -247,14 +213,12 @@ def _date_to_temporada(date_str: str) -> Optional[str]:
             return f"{str(y)[2:]}{str(y + 1)[2:]}"
         except ValueError:
             pass
-
-    # Fallback: buscar mes abreviado + año 4 dígitos en el texto
     low = s.lower()
     year_m = re.search(r"(\d{4})", s)
     if not year_m:
         return None
     year = int(year_m.group(1))
-    month = 9   # por defecto septiembre si no reconocemos el mes
+    month = 9
     for abbr, num in _MONTH_ABBR.items():
         if abbr in low:
             month = num
@@ -264,19 +228,15 @@ def _date_to_temporada(date_str: str) -> Optional[str]:
 
 
 def scrape_market_history(player_url: str) -> list[dict]:
-    """
-    Extrae historial de valor de mercado via ceapi de TM.
-    Devuelve lista de {temporada: 'YYZZ', valor: float (millones €)}.
-    Deduplica por temporada: conserva el último valor registrado en cada una.
-    """
+    """Extrae historial de valor via ceapi de TM."""
     m = re.search(r"/spieler/(\d+)", player_url)
     if not m:
         return []
     player_id = m.group(1)
 
-    api_url = f"https://www.transfermarkt.es/ceapi/marketValueDevelopment/graph/{player_id}"
+    api_url = f"{TM_BASE}/ceapi/marketValueDevelopment/graph/{player_id}"
     try:
-        r = requests.get(api_url, headers=HEADERS, timeout=15)
+        r = _scraper.get(api_url, timeout=15)
         if r.status_code != 200:
             log.warning("  ceapi HTTP %d para jugador %s", r.status_code, player_id)
             return []
@@ -285,7 +245,6 @@ def scrape_market_history(player_url: str) -> list[dict]:
         log.warning("  ceapi error jugador %s: %s", player_id, e)
         return []
 
-    # Agrupar por temporada: el último valor de cada temporada gana
     by_temp: dict[str, float] = {}
     for entry in entries:
         datum = entry.get("datum_mw", "")
@@ -312,14 +271,14 @@ def load_supabase_jugadores() -> pd.DataFrame:
     )
     rows = []
     for r in res.data:
-        eq = (r.get("equipos") or {})
+        eq = r.get("equipos") or {}
         rows.append({
-            "jugador_id":   r["id"],
-            "nombre":       r["nombre"],
-            "nombre_norm":  _norm(r["nombre"]),
-            "equipo_id":    r["equipo_id"],
+            "jugador_id":    r["id"],
+            "nombre":        r["nombre"],
+            "nombre_norm":   _norm(r["nombre"]),
+            "equipo_id":     r["equipo_id"],
             "equipo_nombre": eq.get("nombre", ""),
-            "equipo_norm":  _norm(eq.get("nombre", "")),
+            "equipo_norm":   _norm(eq.get("nombre", "")),
         })
     df = pd.DataFrame(rows)
     log.info("      %d jugadores en Supabase.", len(df))
@@ -327,18 +286,13 @@ def load_supabase_jugadores() -> pd.DataFrame:
 
 
 def match_players(df_supa: pd.DataFrame, df_tm: pd.DataFrame) -> pd.DataFrame:
-    """
-    Une Supabase con TM por nombre normalizado.
-    Primero intenta match exacto; fallback por nombre solo.
-    """
     log.info("[4/5] Cruzando nombres Supabase <-> Transfermarkt...")
 
-    # Índices de TM
-    exact_idx  = {(r["nombre_norm"], _norm(r["equipo_tm"])): i
-                  for i, r in df_tm.iterrows()}
-    name_idx   = {}
+    exact_idx = {(r["nombre_norm"], _norm(r["equipo_tm"])): i
+                 for i, r in df_tm.iterrows()}
+    name_idx: dict[str, int] = {}
     for i, r in df_tm.iterrows():
-        name_idx.setdefault(r["nombre_norm"], i)   # primero gana
+        name_idx.setdefault(r["nombre_norm"], i)
 
     matched_exact = matched_name = unmatched = 0
     tm_idx_list = []
@@ -359,7 +313,6 @@ def match_players(df_supa: pd.DataFrame, df_tm: pd.DataFrame) -> pd.DataFrame:
     log.info("      Match por nombre solo        : %d", matched_name)
     log.info("      Sin match                    : %d", unmatched)
 
-    # Construir DataFrame combinado
     merged_rows = []
     for (_, supa_row), tm_i in zip(df_supa.iterrows(), tm_idx_list):
         if tm_i is None:
@@ -367,7 +320,7 @@ def match_players(df_supa: pd.DataFrame, df_tm: pd.DataFrame) -> pd.DataFrame:
         tm_row = df_tm.loc[tm_i]
         merged_rows.append({
             "jugador_id":    supa_row["jugador_id"],
-            "nombre":        supa_row["nombre"],       # requerido NOT NULL
+            "nombre":        supa_row["nombre"],
             "equipo_id":     supa_row["equipo_id"],
             "foto_url":      tm_row["foto_url"],
             "valor_mercado": tm_row["valor_mercado"],
@@ -388,10 +341,7 @@ def upsert_jugadores(df: pd.DataFrame) -> int:
 
     rows = []
     for _, r in df_validos.iterrows():
-        row = {
-            "id":     int(r["jugador_id"]),
-            "nombre": r["nombre"],          # NOT NULL — requerido en upsert
-        }
+        row = {"id": int(r["jugador_id"]), "nombre": r["nombre"]}
         if pd.notna(r.get("foto_url")):
             row["foto_url"] = r["foto_url"]
         if pd.notna(r.get("valor_mercado")):
@@ -406,16 +356,11 @@ def upsert_jugadores(df: pd.DataFrame) -> int:
 
 
 def upsert_historial(df: pd.DataFrame) -> int:
-    """Inserta el valor actual como entrada del historial para TEMPORADA."""
     log.info("      Insertando historial de valor (temporada actual)...")
     df_val = df[df["valor_mercado"].notna()].copy()
 
     rows = [
-        {
-            "jugador_id": int(r["jugador_id"]),
-            "temporada":  TEMPORADA,
-            "valor":      float(r["valor_mercado"]),
-        }
+        {"jugador_id": int(r["jugador_id"]), "temporada": TEMPORADA, "valor": float(r["valor_mercado"])}
         for _, r in df_val.iterrows()
     ]
     res = (
@@ -436,10 +381,10 @@ def run():
     log.info(" Transfermarkt Scraper -- LaLiga %s", TEMPORADA)
     log.info("=" * 52)
 
-    teams       = get_team_ids()
-    df_tm       = scrape_all_squads(teams)
-    df_supa     = load_supabase_jugadores()
-    df_merged   = match_players(df_supa, df_tm)
+    teams     = get_team_ids()
+    df_tm     = scrape_all_squads(teams)
+    df_supa   = load_supabase_jugadores()
+    df_merged = match_players(df_supa, df_tm)
 
     jugadores_ok = upsert_jugadores(df_merged)
     historial_ok = upsert_historial(df_merged)
@@ -447,8 +392,7 @@ def run():
     if CARGAR_HISTORIAL:
         jugadores_con_url = df_merged[df_merged["player_url"].notna()]
         total_j = len(jugadores_con_url)
-        log.info("Cargando historial multi-temporada (%d jugadores, ~%ds)...",
-                 total_j, int(total_j * REQUEST_DELAY))
+        log.info("Cargando historial multi-temporada (%d jugadores)...", total_j)
 
         BATCH = 50
         hist_rows = []
@@ -470,20 +414,18 @@ def run():
                         hist_rows, on_conflict="jugador_id,temporada"
                     ).execute()
                     hist_total += len(hist_rows)
-                    log.info("  [%d/%d] Batch insertado: %d entradas (total: %d)",
+                    log.info("  [%d/%d] Batch: %d entradas (total: %d)",
                              i, total_j, len(hist_rows), hist_total)
                     hist_rows = []
-                else:
-                    log.info("  [%d/%d] Sin entradas en este batch.", i, total_j)
 
-        log.info("Historial multi-temporada completado: %d entradas totales.", hist_total)
+        log.info("Historial completado: %d entradas totales.", hist_total)
 
     log.info("=" * 52)
     log.info(" RESUMEN")
     log.info("  Jugadores TM scrapeados        : %d", len(df_tm))
     log.info("  Jugadores en Supabase          : %d", len(df_supa))
     log.info("  Matches encontrados            : %d", len(df_merged))
-    log.info("  Jugadores actualizados (foto+valor): %d", jugadores_ok)
+    log.info("  Jugadores actualizados         : %d", jugadores_ok)
     log.info("  Historial insertado            : %d", historial_ok)
     log.info("=" * 52)
 

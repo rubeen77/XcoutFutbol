@@ -50,7 +50,7 @@ export default function Footer() {
                 <span className="text-white font-semibold">cout</span>
               </span>
               <span className="text-slate-700 text-xs">·</span>
-              <span className="text-slate-600 text-xs">© 2025</span>
+              <span className="text-slate-600 text-xs">© 2026</span>
             </div>
           </div>
 
@@ -59,7 +59,7 @@ export default function Footer() {
             <a href="#" className="hover:text-slate-400 transition-colors">Términos de uso</a>
             <a href="#" className="hover:text-slate-400 transition-colors">Privacidad</a>
             <span className="text-slate-800">·</span>
-            <span className="text-slate-700">LaLiga 2024/25</span>
+            <span className="text-slate-700">LaLiga 2025/26</span>
           </nav>
 
         </div>

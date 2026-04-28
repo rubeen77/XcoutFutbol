@@ -1,4 +1,4 @@
-const BASE_URL = 'http://localhost:8000'
+const BASE_URL = 'http://localhost:8090'
 
 async function apiFetch(path) {
   const res = await fetch(`${BASE_URL}${path}`)
@@ -50,6 +50,13 @@ function adaptarJugador(raw) {
       pases_completados: stats.pases_completados || 0,
       regates:           stats.regates           || 0,
       recuperaciones:    stats.recuperaciones    || 0,
+      intercepciones:    stats.intercepciones    || 0,
+      entradas:          stats.entradas          || 0,
+      tiros_totales:     stats.tiros_totales     || 0,
+      tiros_a_puerta:    stats.tiros_a_puerta    || 0,
+      portero_paradas:          stats.portero_paradas          || 0,
+      portero_goles_encajados:  stats.portero_goles_encajados  || 0,
+      portero_paradas_pct:      stats.portero_paradas_pct      || 0,
       minutos_jugados:   minutos,
       goles_por_90:      stats.goles_por_90        ?? p90(goles, minutos),
       asistencias_por_90:stats.asistencias_por_90  ?? p90(asistencias, minutos),
@@ -80,6 +87,13 @@ function adaptarRankingItem(r, metricaFrontend) {
       pases_completados: r.pases_completados || 0,
       regates:           r.regates           || 0,
       recuperaciones:    r.recuperaciones    || 0,
+      intercepciones:    r.intercepciones    || 0,
+      entradas:          r.entradas          || 0,
+      tiros_totales:     r.tiros_totales     || 0,
+      tiros_a_puerta:    r.tiros_a_puerta    || 0,
+      portero_paradas:          r.portero_paradas          || 0,
+      portero_goles_encajados:  r.portero_goles_encajados  || 0,
+      portero_paradas_pct:      r.portero_paradas_pct      || 0,
       minutos_jugados:   minutos,
       goles_por_90:      r.goles_por_90        ?? p90(goles, minutos),
       asistencias_por_90:r.asistencias_por_90  ?? p90(asistencias, minutos),
@@ -137,12 +151,41 @@ export async function getRanking(metrica = 'goles', limit = 20) {
 
 /** Lista de equipos de una liga. */
 export async function getEquipos(liga_id = 1) {
-  return apiFetch(`/equipos?liga_id=${liga_id}`)
+  return apiFetch(`/equipos?liga_id=${liga_id}&temporada=2526`)
 }
 
-/** Partidos, opcionalmente filtrados por jornada. */
-export async function getPartidos(jornada) {
+/** Perfil completo de un equipo (plantilla + partidos + totales). */
+export async function getEquipoDetalle(equipo_id) {
+  return apiFetch(`/equipos/${equipo_id}?temporada=2526`)
+}
+
+/** Detalle de un partido por id. */
+export async function getPartidoDetalle(id) {
+  return apiFetch(`/partidos/${id}`)
+}
+
+/** Todos los partidos de un equipo en la temporada actual. */
+export async function getPartidosPorEquipo(equipo_id) {
+  const params = new URLSearchParams({ liga_id: 1, temporada: '2526', equipo_id })
+  return apiFetch(`/partidos?${params}`)
+}
+
+// ─── Insights ────────────────────────────────────────────────────────────────
+
+export async function getInsightsRankings(temporada = '2526') {
+  return apiFetch(`/insights/rankings?temporada=${temporada}`)
+}
+export async function getInsightsDatosCuriosos(temporada = '2526') {
+  return apiFetch(`/insights/datos-curiosos?temporada=${temporada}`)
+}
+export async function getInsightsQuiz(temporada = '2526') {
+  return apiFetch(`/insights/quiz?temporada=${temporada}`)
+}
+
+/** Partidos, opcionalmente filtrados por jornada y/o estado. */
+export async function getPartidos(jornada, { estado } = {}) {
   const params = new URLSearchParams({ liga_id: 1, temporada: '2526' })
   if (jornada != null) params.set('jornada', jornada)
+  if (estado)          params.set('estado', estado)
   return apiFetch(`/partidos?${params}`)
 }

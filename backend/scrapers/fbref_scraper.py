@@ -1,20 +1,18 @@
 """
 FBref Scraper — LaLiga via soccerdata
 
-Stat types disponibles en soccerdata FBref (verificado):
-  standard     → goles, asistencias, minutos, tarjetas, per-90
-  shooting     → disparos, disparos a puerta  (xG NO disponible en esta version)
-  misc         → recuperaciones (TklW), interceptaciones (Int)
+Stat types disponibles en esta versión de soccerdata:
+  standard     → goles, asistencias, minutos, per-90
+  misc         → intercepciones (Int), entradas (TklW), recuperaciones
+  keeper       → portero_paradas, portero_goles_encajados, portero_paradas_pct
+  shooting     → tiros_totales, tiros_a_puerta
 
-NO disponibles via soccerdata: passing, defense, possession, gca
-→ xG/xA vendrán del scraper de Understat (understat_scraper.py)
-→ pases, regates, presiones vendrán de FBref directo cuando soccerdata lo soporte
-
-Estrategia de carga:
-  1. Cargar todos los stat_types en pandas
-  2. Merge en memoria sobre (player, team)
-  3. Un único upsert en batch para jugadores y otro para estadísticas
-  → Sin bucles por jugador, sin N+1 requests
+NO disponibles en soccerdata (requieren scraping directo de FBref):
+  defense      → bloques, despejes, errores, duelos_aereos
+  passing      → pases_completados, pases_progresivos, xg_asistencia
+  possession   → regates, conducciones_progresivas
+  shooting.xG  → xg (la tabla shooting de soccerdata no incluye Expected)
+  keeper.PSxG  → portero_xg_encajado
 """
 
 import sys
@@ -33,7 +31,7 @@ LIGA_NOMBRE = "LaLiga"
 LIGA_PAIS   = "Espana"
 TEMPORADA   = "2526"
 FBREF_LIGA  = "ESP-La Liga"
-JOIN_ON     = ["player", "team"]          # clave de merge entre stat_types
+JOIN_ON     = ["player", "team"]
 
 
 # ---------------------------------------------------------------------------
@@ -59,10 +57,9 @@ def _float(v, decimals=2):
     return round(float(v), decimals) if v is not None else None
 
 def _flatten(df: pd.DataFrame) -> pd.DataFrame:
-    """Aplana MultiIndex de columnas → 'Grupo__Subcol'."""
     df = df.copy()
     df.columns = [
-        f"{a}__{b}" if b else a
+        f"{a}__{b}" if b else str(a)
         for a, b in (c if isinstance(c, tuple) else (c, "") for c in df.columns)
     ]
     return df
@@ -70,33 +67,29 @@ def _flatten(df: pd.DataFrame) -> pd.DataFrame:
 def _load(fbref: sd.FBref, stat_type: str) -> pd.DataFrame:
     log.info("  stat_type='%s'...", stat_type)
     df = _flatten(fbref.read_player_season_stats(stat_type=stat_type).reset_index())
-    log.info("    %d filas, %d columnas.", len(df), len(df.columns))
+    log.info("    %d filas, %d cols.", len(df), len(df.columns))
     return df
 
 
 # ---------------------------------------------------------------------------
-# Merge de todos los stat_types en un único DataFrame
+# Fase 1 — Merge standard + misc
 # ---------------------------------------------------------------------------
 
 def build_merged(fbref: sd.FBref) -> pd.DataFrame:
-    """
-    Carga standard + misc y los une por (player, team).
-    Devuelve un DataFrame con todas las columnas necesarias para el upsert.
-    shooting no aporta columnas nuevas al schema actual (sin xG).
-    """
-    log.info("Cargando stat_types desde FBref (cache local si existe)...")
+    log.info("Cargando stat_types base (standard + misc)...")
     df_std  = _load(fbref, "standard")
     df_misc = _load(fbref, "misc")
 
-    # Seleccionar solo las columnas útiles de misc antes del merge
+    # Columnas reales disponibles en misc (verificado):
+    #   Performance__Int, Performance__TklW
     misc_cols = JOIN_ON + [
-        "Performance__TklW",   # tackles ganados → recuperaciones
-        "Performance__Int",    # interceptaciones → sumadas a recuperaciones
+        "Performance__TklW",
+        "Performance__Int",
     ]
     df_misc_slim = df_misc[[c for c in misc_cols if c in df_misc.columns]]
 
     merged = df_std.merge(df_misc_slim, on=JOIN_ON, how="left", suffixes=("", "_misc"))
-    log.info("DataFrame combinado: %d filas, %d columnas.", len(merged), len(merged.columns))
+    log.info("DataFrame combinado: %d filas, %d cols.", len(merged), len(merged.columns))
     return merged
 
 
@@ -105,7 +98,7 @@ def build_merged(fbref: sd.FBref) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def upsert_liga() -> int:
-    log.info("[1/4] Upsertando liga '%s'...", LIGA_NOMBRE)
+    log.info("[1/5] Upsertando liga '%s'...", LIGA_NOMBRE)
     res = (
         supabase.table("ligas")
         .upsert({"nombre": LIGA_NOMBRE, "pais": LIGA_PAIS, "temporada_actual": TEMPORADA},
@@ -117,7 +110,7 @@ def upsert_liga() -> int:
     return liga_id
 
 def upsert_equipos(equipos: list, liga_id: int) -> dict:
-    log.info("[2/4] Upsertando %d equipos...", len(equipos))
+    log.info("[2/5] Upsertando %d equipos...", len(equipos))
     rows = [{"nombre": e, "liga_id": liga_id, "temporada": TEMPORADA} for e in equipos]
     res = (
         supabase.table("equipos")
@@ -129,7 +122,7 @@ def upsert_equipos(equipos: list, liga_id: int) -> dict:
     return mapping
 
 def upsert_jugadores(df: pd.DataFrame, equipo_map: dict) -> dict:
-    log.info("[3/4] Upsertando %d jugadores...", len(df))
+    log.info("[3/5] Upsertando %d jugadores...", len(df))
     rows = []
     for _, row in df.iterrows():
         nombre        = _val(row.get("player"))
@@ -161,12 +154,12 @@ def upsert_jugadores(df: pd.DataFrame, equipo_map: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Upsert de estadísticas — UN SOLO batch con todos los campos
+# Fase 1 — Upsert estadísticas base (standard + misc)
 # ---------------------------------------------------------------------------
 
 def upsert_estadisticas(df: pd.DataFrame, jugador_map: dict,
                         equipo_map: dict, liga_id: int) -> int:
-    log.info("[4/4] Upsertando estadisticas (batch unico)...")
+    log.info("[4/5] Upsertando estadisticas base...")
     rows = []
     skipped = 0
 
@@ -199,12 +192,8 @@ def upsert_estadisticas(df: pd.DataFrame, jugador_map: dict,
             "ga_por_90":          _float(row.get("Per 90 Minutes__G+A"), 3),
             # misc
             "recuperaciones":     recuperaciones,
-            # pendiente de otras fuentes
-            "xg":                 None,
-            "xa":                 None,
-            "pases_completados":  None,
-            "regates":            None,
-            "presiones":          None,
+            "intercepciones":     ints,
+            "entradas":           tklw,
         })
 
     res = (
@@ -217,16 +206,143 @@ def upsert_estadisticas(df: pd.DataFrame, jugador_map: dict,
 
 
 # ---------------------------------------------------------------------------
+# Fase 2 — UPDATE con keeper y shooting (sin insertar filas nuevas)
+# ---------------------------------------------------------------------------
+
+def update_extended_stats(fbref: sd.FBref, jugador_map: dict,
+                          equipo_map: dict, liga_id: int):
+    log.info("[5/5] Actualizando estadisticas extendidas (keeper + shooting)...")
+
+    # Solo actualizar jugadores que ya tienen fila en estadisticas_jugador
+    res = (
+        supabase.table("estadisticas_jugador")
+        .select("jugador_id")
+        .eq("temporada", TEMPORADA)
+        .eq("liga_id", liga_id)
+        .execute()
+    )
+    existing_ids = {r["jugador_id"] for r in res.data}
+    log.info("  Filas existentes: %d", len(existing_ids))
+
+    def resolve_id(row):
+        nombre = _val(row.get("player"))
+        team   = _val(row.get("team"))
+        if not nombre or not team:
+            return None
+        eid = equipo_map.get(team)
+        return jugador_map.get((nombre, eid))
+
+    def batch_upsert(updates: list, label: str):
+        valid = [u for u in updates if u.get("jugador_id") in existing_ids]
+        if not valid:
+            log.warning("  %s: 0 filas validas", label)
+            return
+        BATCH = 50
+        total = 0
+        for i in range(0, len(valid), BATCH):
+            r = (
+                supabase.table("estadisticas_jugador")
+                .upsert(valid[i:i + BATCH], on_conflict="jugador_id,temporada,liga_id")
+                .execute()
+            )
+            total += len(r.data)
+        log.info("  %s: %d filas actualizadas", label, total)
+
+    # ── KEEPER ───────────────────────────────────────────────────────────────
+    # Columnas reales: Performance__GA, Performance__Saves, Performance__Save%
+    # NO disponible: Expected__PSxG (portero_xg_encajado)
+    try:
+        df = _load(fbref, "keeper")
+        updates = []
+        for _, row in df.iterrows():
+            jid = resolve_id(row)
+            if not jid:
+                continue
+            # Save% viene como float (ej. 72.3) — lo dividimos entre 100
+            save_pct_raw = _val(row.get("Performance__Save%"))
+            save_pct = None
+            if save_pct_raw is not None:
+                try:
+                    save_pct = round(float(save_pct_raw) / 100, 4)
+                except (TypeError, ValueError):
+                    pass
+            updates.append({
+                "jugador_id":              jid,
+                "temporada":               TEMPORADA,
+                "liga_id":                 liga_id,
+                "portero_paradas":         _int(row.get("Performance__Saves")),
+                "portero_goles_encajados": _int(row.get("Performance__GA")),
+                "portero_paradas_pct":     save_pct,
+            })
+        batch_upsert(updates, "keeper")
+    except Exception as e:
+        log.warning("  keeper ERROR: %s", e)
+
+    # ── SHOOTING ─────────────────────────────────────────────────────────────
+    # Columnas reales: Standard__Sh, Standard__SoT
+    # NO disponible: Expected__xG (xg)
+    try:
+        df = _load(fbref, "shooting")
+        updates = []
+        for _, row in df.iterrows():
+            jid = resolve_id(row)
+            if not jid:
+                continue
+            updates.append({
+                "jugador_id":     jid,
+                "temporada":      TEMPORADA,
+                "liga_id":        liga_id,
+                "tiros_totales":  _int(row.get("Standard__Sh")),
+                "tiros_a_puerta": _int(row.get("Standard__SoT")),
+            })
+        batch_upsert(updates, "shooting")
+    except Exception as e:
+        log.warning("  shooting ERROR: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# Verificación
+# ---------------------------------------------------------------------------
+
+def verify(liga_id: int):
+    log.info("VERIFICACION")
+    for buscar in ("Cubarsi", "Ter Stegen", "Raya"):
+        res = (
+            supabase.table("jugadores")
+            .select("id, nombre")
+            .ilike("nombre", f"%{buscar.split()[0]}%")
+            .limit(2)
+            .execute()
+        )
+        for j in res.data:
+            est = (
+                supabase.table("estadisticas_jugador")
+                .select(
+                    "goles, minutos, intercepciones, entradas, recuperaciones,"
+                    "tiros_totales, tiros_a_puerta,"
+                    "portero_paradas, portero_goles_encajados, portero_paradas_pct"
+                )
+                .eq("jugador_id", j["id"])
+                .eq("temporada", TEMPORADA)
+                .execute()
+            )
+            if est.data:
+                log.info("  %s: %s", j["nombre"], est.data[0])
+            else:
+                log.info("  %s: sin fila en %s", j["nombre"], TEMPORADA)
+
+
+# ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
 
 def run():
-    log.info("=" * 52)
+    log.info("=" * 60)
     log.info(" FBref Scraper — LaLiga %s", TEMPORADA)
-    log.info("=" * 52)
+    log.info("=" * 60)
 
-    fbref  = sd.FBref(leagues=FBREF_LIGA, seasons=TEMPORADA)
-    df     = build_merged(fbref)
+    fbref = sd.FBref(leagues=FBREF_LIGA, seasons=TEMPORADA)
+    df    = build_merged(fbref)
 
     equipos     = sorted(df["team"].dropna().unique().tolist())
     liga_id     = upsert_liga()
@@ -234,17 +350,27 @@ def run():
     jugador_map = upsert_jugadores(df, equipo_map)
     stats_ok    = upsert_estadisticas(df, jugador_map, equipo_map, liga_id)
 
-    log.info("=" * 52)
+    update_extended_stats(fbref, jugador_map, equipo_map, liga_id)
+
+    verify(liga_id)
+
+    log.info("=" * 60)
     log.info(" RESUMEN")
-    log.info("  Equipos    : %d", len(equipo_map))
-    log.info("  Jugadores  : %d", len(jugador_map))
-    log.info("  Estadisticas: %d", stats_ok)
-    log.info("  Requests HTTP totales: 4 (liga + equipos + jugadores + stats)")
+    log.info("  Equipos     : %d", len(equipo_map))
+    log.info("  Jugadores   : %d", len(jugador_map))
+    log.info("  Stats base  : %d", stats_ok)
     log.info("")
-    log.info("  PENDIENTE:")
-    log.info("    xG / xA       -> understat_scraper.py")
-    log.info("    pases/regates -> FBref passing/possession (no en soccerdata aun)")
-    log.info("=" * 52)
+    log.info("  Campos cargados:")
+    log.info("    standard: goles, asistencias, minutos, per-90")
+    log.info("    misc:     intercepciones, entradas, recuperaciones")
+    log.info("    keeper:   portero_paradas, portero_goles_encajados, portero_paradas_pct")
+    log.info("    shooting: tiros_totales, tiros_a_puerta")
+    log.info("")
+    log.info("  Campos NO disponibles en soccerdata (requieren scraping directo):")
+    log.info("    xg, xa, xg_asistencia, portero_xg_encajado")
+    log.info("    bloques, despejes, errores, duelos_aereos")
+    log.info("    pases_completados, pases_progresivos, regates, conducciones_progresivas")
+    log.info("=" * 60)
 
 
 if __name__ == "__main__":

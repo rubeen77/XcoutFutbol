@@ -5,31 +5,14 @@ import {
 } from 'recharts'
 import { jugadores as jugadoresFallback } from '../data/jugadores'
 import { getJugadores } from '../services/api'
-import PlayerRadarChart from '../components/RadarChart'
+import PlayerRadarChart, { ALL_MAX_VALUES, ALL_LABELS, getAxes } from '../components/RadarChart'
 import { ScoutingSkeleton } from '../components/Skeletons'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
-const MAX_VALUES = {
-  goles: 35, asistencias: 20, xG: 28, xA: 15,
-  pases_completados: 95, regates: 120, recuperaciones: 80,
-  minutos_jugados: 3600, goles_por_90: 1.2, asistencias_por_90: 0.8, ga_por_90: 1.8,
-}
-
-const METRIC_LABELS = {
-  goles: 'Goles', asistencias: 'Asistencias', xG: 'xG', xA: 'xA',
-  pases_completados: 'Pases %', regates: 'Regates',
-  recuperaciones: 'Recup.',
-  minutos_jugados: 'Minutos', goles_por_90: 'G/90',
-  asistencias_por_90: 'A/90', ga_por_90: 'G+A/90',
-}
-
-// Solo las 8 métricas base van al radar
-const RADAR_METRICS = ['goles', 'asistencias', 'xG', 'xA', 'pases_completados', 'regates', 'recuperaciones']
-
 const CATEGORIES = [
   { label: 'Ofensiva',   icon: '⚽', metrics: ['goles', 'asistencias', 'xG', 'xA'] },
   { label: 'Creación',   icon: '🎯', metrics: ['pases_completados', 'xA', 'asistencias_por_90'] },
-  { label: 'Defensiva',  icon: '🛡️', metrics: ['recuperaciones', 'regates'] },
+  { label: 'Defensiva',  icon: '🛡️', metrics: ['recuperaciones', 'intercepciones', 'entradas'] },
 ]
 
 const COLOR_A  = '#22d3ee'   // cyan
@@ -39,7 +22,7 @@ const MEDALS   = ['🥇', '🥈', '🥉']
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function normalizar(metricas) {
-  return Object.entries(metricas).map(([k, v]) => v / (MAX_VALUES[k] || 100))
+  return Object.entries(metricas).map(([k, v]) => v / (ALL_MAX_VALUES[k] || 100))
 }
 
 function distancia(a, b) {
@@ -61,7 +44,7 @@ const normSearch = s =>
 
 // ─── Fila de duelo: similares ─────────────────────────────────────────────────
 function DuelRow({ label, refVal, simVal, metricKey }) {
-  const max     = MAX_VALUES[metricKey] || 100
+  const max     = ALL_MAX_VALUES[metricKey] || 100
   const refPct  = Math.min((refVal / max) * 100, 100)
   const simPct  = Math.min((simVal / max) * 100, 100)
   const refWins = refVal > simVal
@@ -97,7 +80,7 @@ function DuelRow({ label, refVal, simVal, metricKey }) {
 
 // ─── Fila comparador: cyan A vs violet B ─────────────────────────────────────
 function ComparRow({ label, valA, valB, metricKey }) {
-  const max  = MAX_VALUES[metricKey] || 100
+  const max  = ALL_MAX_VALUES[metricKey] || 100
   const pctA = Math.min(((valA ?? 0) / max) * 100, 100)
   const pctB = Math.min(((valB ?? 0) / max) * 100, 100)
   const aWins = (valA ?? 0) > (valB ?? 0)
@@ -131,9 +114,10 @@ function ComparRow({ label, valA, valB, metricKey }) {
 
 // ─── Radar con dos jugadores superpuestos ─────────────────────────────────────
 function DualRadar({ a, b }) {
-  const data = RADAR_METRICS.map(key => {
-    const norm = v => Math.min(100, Math.round(((Number(v) || 0) / MAX_VALUES[key]) * 100))
-    return { label: METRIC_LABELS[key], A: norm(a.metricas[key]), B: norm(b.metricas[key]) }
+  const axes = getAxes(a.posicion)
+  const data = axes.map(key => {
+    const norm = v => Math.min(100, Math.round(((Number(v) || 0) / (ALL_MAX_VALUES[key] || 100)) * 100))
+    return { label: ALL_LABELS[key] || key, A: norm(a.metricas[key]), B: norm(b.metricas[key]) }
   })
   return (
     <ResponsiveContainer width="100%" height={300}>
@@ -321,7 +305,7 @@ export default function Scouting() {
     .sort((a, b) => a.dist - b.dist)
     .slice(0, 3)
   const comparados   = [referencia, ...similares]
-  const metricas     = Object.keys(referencia.metricas)
+  const metricas     = getAxes(referencia.posicion)
   const duelJugador  = similares.find(j => j.id === duelId) ?? similares[0]
 
   const jugadorA     = jugadores.find(j => j.id === comparA) || jugadores[0]
@@ -437,7 +421,7 @@ export default function Scouting() {
                          style={{ color: COLORS[i] }}>
                         {j.nombre.split(' ')[0]}
                       </p>
-                      <PlayerRadarChart metricas={j.metricas} color={COLORS[i]} />
+                      <PlayerRadarChart metricas={j.metricas} color={COLORS[i]} axes={getAxes(referencia.posicion)} />
                     </div>
                   ))}
                 </div>
@@ -468,7 +452,7 @@ export default function Scouting() {
                 {metricas.map(m => (
                   <DuelRow
                     key={m}
-                    label={METRIC_LABELS[m]}
+                    label={ALL_LABELS[m] || m}
                     metricKey={m}
                     refVal={referencia.metricas[m]}
                     simVal={duelJugador.metricas[m]}
@@ -525,7 +509,7 @@ export default function Scouting() {
                       const max  = Math.max(...vals)
                       return (
                         <tr key={m} className="border-b border-slate-800/40 last:border-0 hover:bg-slate-800/30 transition-colors">
-                          <td className="px-6 py-3 text-slate-400 text-sm">{METRIC_LABELS[m] || m}</td>
+                          <td className="px-6 py-3 text-slate-400 text-sm">{ALL_LABELS[m] || m}</td>
                           {vals.map((v, i) => (
                             <td key={i} className={`text-right px-4 py-3 font-black tabular-nums text-sm ${
                               v === max ? 'text-cyan-400' : 'text-white'
@@ -669,10 +653,10 @@ export default function Scouting() {
                       </span>
                     </div>
                   </div>
-                  {Object.keys(MAX_VALUES).map(m => (
+                  {getAxes(jugadorA.posicion).map(m => (
                     <ComparRow
                       key={m}
-                      label={METRIC_LABELS[m]}
+                      label={ALL_LABELS[m] || m}
                       metricKey={m}
                       valA={jugadorA.metricas[m]}
                       valB={jugadorB.metricas[m]}
@@ -698,7 +682,7 @@ export default function Scouting() {
 
                     // Margen normalizado promedio (0-100)
                     const rawMargin = cat.metrics.reduce((sum, m) => {
-                      const maxVal = MAX_VALUES[m] || 100
+                      const maxVal = ALL_MAX_VALUES[m] || 100
                       return sum + ((jugadorA.metricas[m] ?? 0) - (jugadorB.metricas[m] ?? 0)) / maxVal
                     }, 0) / cat.metrics.length
                     const marginPct = Math.round(Math.abs(rawMargin) * 100)

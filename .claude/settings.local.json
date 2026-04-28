@@ -6,7 +6,11 @@
       "Bash(cd \"C:\\\\\\\\Users\\\\\\\\ruben\\\\\\\\Desktop\\\\\\\\WebXcout\\\\\\\\backend\")",
       "Bash(\"C:\\\\\\\\Users\\\\\\\\ruben\\\\\\\\miniconda3\\\\\\\\envs\\\\\\\\xcout\\\\\\\\python.exe\" scrapers/fbref_historico_scraper.py --temporada 2425)",
       "Bash(\"C:\\\\\\\\Users\\\\\\\\ruben\\\\\\\\miniconda3\\\\\\\\envs\\\\\\\\xcout\\\\\\\\python.exe\" -)",
-      "Bash(2>&1)"
+      "Bash(2>&1)",
+      "PowerShell(& \"C:\\\\Users\\\\ruben\\\\miniconda3\\\\envs\\\\xcout\\\\python.exe\" -c \"import cloudscraper; print\\('cloudscraper OK'\\)\" 2>&1)",
+      "PowerShell(& \"C:\\\\Users\\\\ruben\\\\miniconda3\\\\envs\\\\xcout\\\\python.exe\" -c \"import curl_cffi; print\\('curl_cffi OK'\\)\" 2>&1)",
+      "PowerShell(& \"C:\\\\Users\\\\ruben\\\\miniconda3\\\\envs\\\\xcout\\\\python.exe\" -c \"import httpx; print\\('httpx OK'\\)\" 2>&1)",
+      "PowerShell(& \"C:\\\\Users\\\\ruben\\\\miniconda3\\\\envs\\\\xcout\\\\python.exe\" -m pip install cloudscraper --quiet 2>&1)"
     ]
   }
 }

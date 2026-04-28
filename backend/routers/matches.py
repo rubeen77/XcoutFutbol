@@ -10,13 +10,22 @@ from database.supabase_client import supabase
 
 router = APIRouter()
 
-# Columnas comunes de partido con nombres de equipo embebidos
+# Columnas para la lista de partidos
 PARTIDO_SELECT = (
     "id, sofascore_id, jornada, fecha, estado, "
     "goles_local, goles_visitante, xg_local, xg_visitante, "
     "equipo_local, equipo_visitante, "
-    "local:equipos!partidos_equipo_local_fkey(id, nombre), "
-    "visitante:equipos!partidos_equipo_visitante_fkey(id, nombre)"
+    "local:equipos!partidos_equipo_local_fkey(id, nombre, escudo_url), "
+    "visitante:equipos!partidos_equipo_visitante_fkey(id, nombre, escudo_url)"
+)
+
+# Columnas para el detalle — incluye clasificación de cada equipo
+PARTIDO_DETALLE_SELECT = (
+    "id, sofascore_id, jornada, fecha, estado, "
+    "goles_local, goles_visitante, xg_local, xg_visitante, "
+    "equipo_local, equipo_visitante, "
+    "local:equipos!partidos_equipo_local_fkey(id, nombre, puntos, posicion_clasificacion, escudo_url), "
+    "visitante:equipos!partidos_equipo_visitante_fkey(id, nombre, puntos, posicion_clasificacion, escudo_url)"
 )
 
 
@@ -46,7 +55,7 @@ def listar_partidos(
     if estado:
         q = q.eq("estado", estado)
 
-    res = q.execute()
+    res = q.range(0, 499).execute()
     partidos = res.data
 
     # Filtro por equipo (local o visitante) — post-fetch
@@ -67,7 +76,7 @@ def listar_partidos(
 def detalle_partido(partido_id: int):
     res = (
         supabase.table("partidos")
-        .select(PARTIDO_SELECT)
+        .select(PARTIDO_DETALLE_SELECT)
         .eq("id", partido_id)
         .single()
         .execute()

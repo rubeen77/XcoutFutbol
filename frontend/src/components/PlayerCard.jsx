@@ -103,10 +103,19 @@ export default function PlayerCard({ jugador }) {
                       hover:scale-[1.02] hover:shadow-xl hover:shadow-cyan-950/60">
 
         {/* Avatar + name */}
-        <div className="flex items-center gap-3 mb-4">
-          <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${gradient} border border-white/5
-                          flex items-center justify-center shrink-0`}>
+        <div className="flex items-start gap-3 mb-4">
+          <div className={`relative w-12 h-16 rounded-xl bg-gradient-to-br ${gradient} border border-white/5
+                          flex items-center justify-center shrink-0 overflow-hidden`}>
             <span className="text-sm font-black text-white">{initials}</span>
+            {jugador.foto_url && (
+              <img
+                src={jugador.foto_url}
+                alt={jugador.nombre}
+                referrerPolicy="no-referrer"
+                className="absolute inset-0 w-full h-full object-cover object-top"
+                onError={e => e.currentTarget.remove()}
+              />
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <h3 className="font-bold text-white text-sm leading-tight truncate
