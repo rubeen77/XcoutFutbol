@@ -1,18 +1,15 @@
 """
-Sofascore Stats Scraper — regates y pases% para LaLiga 2025/26
-
-FBref (via soccerdata) no expone possession/passing/defense.
-FBref directo devuelve 403 (Cloudflare).
-Solución: usar el endpoint de estadísticas de temporada de Sofascore.
+Sofascore Stats Scraper — regates y pases% para Bundesliga 2025/26
 
 Campos obtenidos:
-  successfulDribbles      → regates
-  accuratePassesPercentage → pases_completados  (% de pases completados)
+  successfulDribbles       -> regates
+  accuratePassesPercentage -> pases_completados
 
-(presiones no está disponible en ninguna fuente gratuita accesible)
+Si SEASON_ID es None, se descubre automaticamente desde la API de Sofascore
+buscando la temporada "25/26" del torneo 35 (Bundesliga).
 
-Uso:
-  python sofascore_stats_scraper.py
+Uso (desde backend/):
+  python scrapers/sofascore_bundesliga_scraper.py
 """
 
 import sys
@@ -20,7 +17,6 @@ import time
 import logging
 import unicodedata
 from pathlib import Path
-from typing import Optional
 
 from curl_cffi import requests
 
@@ -32,12 +28,12 @@ SESSION = requests.Session(impersonate="chrome124")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
 log = logging.getLogger(__name__)
 
-TOURNAMENT_ID = 8        # LaLiga uniqueTournament en Sofascore
-SEASON_ID     = 77559    # LaLiga 25/26
-DB_LIGA_ID    = 1
+TOURNAMENT_ID = 35      # Bundesliga en Sofascore
+SEASON_ID     = None    # Se descubre automaticamente si es None
+DB_LIGA_ID    = 25
 DB_TEMPORADA  = "2526"
 PAGE_SIZE     = 100
-REQUEST_DELAY = 0.8      # segundos entre páginas
+REQUEST_DELAY = 0.8
 
 HEADERS = {
     "User-Agent": (
@@ -58,17 +54,41 @@ def _norm(text: str) -> str:
     return " ".join(nfkd.encode("ascii", "ignore").decode().lower().split())
 
 
-# ---------------------------------------------------------------------------
-# 1. Descargar todas las estadísticas de temporada desde Sofascore
-# ---------------------------------------------------------------------------
+# --- Descubrimiento del season_id --------------------------------------------
 
-def fetch_all_stats() -> list[dict]:
+def discover_season_id() -> int:
     """
-    Pagina por /unique-tournament/{tid}/season/{sid}/statistics
-    con group=summary y devuelve todos los registros.
+    Llama a /unique-tournament/{TOURNAMENT_ID}/seasons y devuelve el id
+    de la temporada 2025/26 (nombre contiene '25/26' o '2025').
     """
-    log.info("[1/4] Descargando stats de temporada desde Sofascore...")
-    url    = f"{API}/unique-tournament/{TOURNAMENT_ID}/season/{SEASON_ID}/statistics"
+    url = f"{API}/unique-tournament/{TOURNAMENT_ID}/seasons"
+    log.info("[season] Consultando temporadas Bundesliga en Sofascore...")
+    r = SESSION.get(url, headers=HEADERS, timeout=15)
+    r.raise_for_status()
+
+    seasons = r.json().get("seasons", [])
+    log.info("  %d temporadas encontradas:", len(seasons))
+    for s in seasons[:8]:
+        log.info("    id=%-7d  %s", s["id"], s.get("name", ""))
+
+    for s in seasons:
+        name = s.get("name", "")
+        if "25/26" in name or "2025" in name:
+            log.info("  -> Usando season_id=%d  (%s)", s["id"], name)
+            return s["id"]
+
+    # Fallback: la primera temporada (la mas reciente en Sofascore)
+    fallback = seasons[0]["id"]
+    log.warning("  No se encontro '25/26' — usando la primera: id=%d  (%s)",
+                fallback, seasons[0].get("name", ""))
+    return fallback
+
+
+# --- Fetch de stats -----------------------------------------------------------
+
+def fetch_all_stats(season_id: int) -> list[dict]:
+    log.info("[1/4] Descargando stats de temporada desde Sofascore Bundesliga...")
+    url    = f"{API}/unique-tournament/{TOURNAMENT_ID}/season/{season_id}/statistics"
     params = {
         "limit":        PAGE_SIZE,
         "order":        "-goals",
@@ -76,41 +96,39 @@ def fetch_all_stats() -> list[dict]:
         "group":        "summary",
     }
 
-    # Primera página para saber cuántas hay
     r = SESSION.get(url, headers=HEADERS, params={**params, "offset": 0}, timeout=15)
     r.raise_for_status()
-    data  = r.json()
+    data        = r.json()
     total_pages = data.get("pages", 1)
     results     = data.get("results", [])
-    log.info("      Páginas totales: %d  (~%d jugadores)", total_pages, total_pages * PAGE_SIZE)
+    log.info("      Paginas totales: %d  (~%d jugadores)", total_pages, total_pages * PAGE_SIZE)
 
     for page in range(1, total_pages):
         time.sleep(REQUEST_DELAY)
         r = SESSION.get(url, headers=HEADERS, params={**params, "offset": page * PAGE_SIZE}, timeout=15)
         if r.status_code != 200:
-            log.warning("      HTTP %d en página %d — saltando", r.status_code, page)
+            log.warning("      HTTP %d en pagina %d -- saltando", r.status_code, page)
             continue
         results.extend(r.json().get("results", []))
-        if page % 10 == 0:
-            log.info("      Página %d/%d (%d registros)", page, total_pages, len(results))
+        if page % 5 == 0:
+            log.info("      Pagina %d/%d (%d registros)", page, total_pages, len(results))
 
     log.info("      Total registros Sofascore: %d", len(results))
     return results
 
 
 def build_ss_index(ss_rows: list[dict]) -> tuple[dict, dict]:
-    """Índice {nombre_norm: {regates, pases_pct}} con fallback por nombre solo."""
-    exact  = {}   # (nombre_norm, equipo_norm) → stats
-    byname = {}   # nombre_norm → stats  (último gana si hay duplicados)
+    exact  = {}
+    byname = {}
 
     for r in ss_rows:
-        jugador = r.get("player") or {}
-        equipo  = r.get("team")   or {}
+        jugador  = r.get("player") or {}
+        equipo   = r.get("team")   or {}
         nombre_n = _norm(jugador.get("name", ""))
         equipo_n = _norm(equipo.get("name", ""))
 
         stats = {
-            "regates":          r.get("successfulDribbles"),
+            "regates": r.get("successfulDribbles"),
             "pases_completados": (
                 round(r["accuratePassesPercentage"])
                 if r.get("accuratePassesPercentage") is not None else None
@@ -122,18 +140,17 @@ def build_ss_index(ss_rows: list[dict]) -> tuple[dict, dict]:
     return exact, byname
 
 
-# ---------------------------------------------------------------------------
-# 2. Leer jugadores existentes en Supabase
-# ---------------------------------------------------------------------------
+# --- Carga desde Supabase ----------------------------------------------------
 
 def load_supabase_stats() -> list[dict]:
-    log.info("[2/4] Leyendo estadísticas existentes en Supabase...")
+    log.info("[2/4] Leyendo estadisticas existentes en Supabase Bundesliga...")
     res = (
         supabase.table("estadisticas_jugador")
         .select(
             "jugador_id, temporada, liga_id, "
             "goles, asistencias, xg, xa, minutos, "
             "pases_completados, regates, presiones, recuperaciones, "
+            "intercepciones, entradas, "
             "goles_por_90, asistencias_por_90, ga_por_90, "
             "jugadores(nombre, equipos(nombre))"
         )
@@ -154,9 +171,7 @@ def load_supabase_stats() -> list[dict]:
     return rows
 
 
-# ---------------------------------------------------------------------------
-# 3. Cruce y merge
-# ---------------------------------------------------------------------------
+# --- Cruce y merge -----------------------------------------------------------
 
 def merge_stats(supa_rows: list[dict], exact: dict, byname: dict) -> list[dict]:
     log.info("[3/4] Cruzando nombres Supabase <-> Sofascore...")
@@ -182,10 +197,8 @@ def merge_stats(supa_rows: list[dict], exact: dict, byname: dict) -> list[dict]:
             "jugador_id":         r["jugador_id"],
             "temporada":          r["temporada"],
             "liga_id":            r["liga_id"],
-            # Campos a actualizar
             "regates":            ss["regates"],
             "pases_completados":  ss["pases_completados"],
-            # Preservar todos los campos existentes
             "goles":              r.get("goles"),
             "asistencias":        r.get("asistencias"),
             "xg":                 r.get("xg"),
@@ -193,6 +206,8 @@ def merge_stats(supa_rows: list[dict], exact: dict, byname: dict) -> list[dict]:
             "minutos":            r.get("minutos"),
             "presiones":          r.get("presiones"),
             "recuperaciones":     r.get("recuperaciones"),
+            "intercepciones":     r.get("intercepciones"),
+            "entradas":           r.get("entradas"),
             "goles_por_90":       r.get("goles_por_90"),
             "asistencias_por_90": r.get("asistencias_por_90"),
             "ga_por_90":          r.get("ga_por_90"),
@@ -205,12 +220,10 @@ def merge_stats(supa_rows: list[dict], exact: dict, byname: dict) -> list[dict]:
     return rows_to_update
 
 
-# ---------------------------------------------------------------------------
-# 4. Upsert en Supabase
-# ---------------------------------------------------------------------------
+# --- Upsert ------------------------------------------------------------------
 
 def upsert_stats(rows: list[dict]) -> int:
-    log.info("[4/4] Actualizando regates y pases%% en Supabase (batch unico)...")
+    log.info("[4/4] Actualizando regates y pases%% en Supabase Bundesliga...")
     if not rows:
         log.info("      Nada que actualizar.")
         return 0
@@ -225,28 +238,57 @@ def upsert_stats(rows: list[dict]) -> int:
     return ok
 
 
-# ---------------------------------------------------------------------------
-# Entrypoint
-# ---------------------------------------------------------------------------
+# --- Verificacion ------------------------------------------------------------
+
+def verify():
+    log.info("")
+    log.info("[VERIFY] Jugadores clave Bundesliga:")
+    for name in ("Kane", "Kimmich", "Musiala"):
+        res = (supabase.table("jugadores").select("id, nombre")
+               .ilike("nombre", f"%{name}%").limit(1).execute())
+        if not res.data:
+            log.info("  %-25s -> no en DB", name)
+            continue
+        jid = res.data[0]["id"]
+        nom = res.data[0]["nombre"]
+        est = (supabase.table("estadisticas_jugador")
+               .select("regates, pases_completados, intercepciones, entradas, xg, goles")
+               .eq("jugador_id", jid).eq("temporada", DB_TEMPORADA)
+               .eq("liga_id", DB_LIGA_ID).execute())
+        if est.data:
+            d = est.data[0]
+            log.info("  %-25s  reg=%-4s  pases%%=%-5s  int=%-4s  entr=%-4s  xG=%s",
+                     nom, d.get("regates"), d.get("pases_completados"),
+                     d.get("intercepciones"), d.get("entradas"), d.get("xg"))
+        else:
+            log.info("  %-25s -> sin stats Bundesliga", nom)
+
+
+# --- Entrypoint --------------------------------------------------------------
 
 def run():
-    log.info("=" * 56)
-    log.info(" Sofascore Stats Scraper -- LaLiga %s", DB_TEMPORADA)
-    log.info(" Campos: regates (successfulDribbles), pases%% (accuratePassesPercentage)")
-    log.info("=" * 56)
+    season_id = SEASON_ID if SEASON_ID is not None else discover_season_id()
 
-    ss_rows           = fetch_all_stats()
-    exact, byname     = build_ss_index(ss_rows)
-    supa_rows         = load_supabase_stats()
-    rows_to_update    = merge_stats(supa_rows, exact, byname)
-    updated           = upsert_stats(rows_to_update)
+    log.info("=" * 60)
+    log.info(" Sofascore Bundesliga Stats Scraper -- %s", DB_TEMPORADA)
+    log.info(" tournament=%d  season=%d  liga_id=%d", TOURNAMENT_ID, season_id, DB_LIGA_ID)
+    log.info("=" * 60)
 
-    log.info("=" * 56)
+    ss_rows        = fetch_all_stats(season_id)
+    exact, byname  = build_ss_index(ss_rows)
+    supa_rows      = load_supabase_stats()
+    rows_to_update = merge_stats(supa_rows, exact, byname)
+    updated        = upsert_stats(rows_to_update)
+
+    verify()
+
+    log.info("")
+    log.info("=" * 60)
     log.info(" RESUMEN")
     log.info("  Jugadores en Sofascore  : %d", len(ss_rows))
     log.info("  Jugadores en Supabase   : %d", len(supa_rows))
     log.info("  Actualizados            : %d", updated)
-    log.info("=" * 56)
+    log.info("=" * 60)
 
 
 if __name__ == "__main__":

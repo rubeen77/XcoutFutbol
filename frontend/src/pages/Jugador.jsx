@@ -13,29 +13,61 @@ import { useCountUp } from '../hooks/useCountUp'
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 const THRESHOLDS = {
-  goles:             { max: 35,   good: 20,  ok: 8  },
-  asistencias:       { max: 20,   good: 12,  ok: 5  },
-  xG:                { max: 28,   good: 15,  ok: 6  },
-  xA:                { max: 15,   good: 8,   ok: 3  },
-  pases_completados: { max: 95,   good: 85,  ok: 74 },
-  regates:           { max: 120,  good: 60,  ok: 25 },
-  recuperaciones:    { max: 80,   good: 40,  ok: 18 },
-  goles_por_90:      { max: 1.2,  good: 0.6, ok: 0.3 },
-  asistencias_por_90:{ max: 0.8,  good: 0.4, ok: 0.2 },
-  ga_por_90:         { max: 1.8,  good: 0.9, ok: 0.5 },
+  goles:              { max: 35,   good: 20,  ok: 8   },
+  asistencias:        { max: 20,   good: 12,  ok: 5   },
+  xG:                 { max: 28,   good: 15,  ok: 6   },
+  xA:                 { max: 15,   good: 8,   ok: 3   },
+  pases_completados:  { max: 95,   good: 85,  ok: 74  },
+  regates:            { max: 120,  good: 60,  ok: 25  },
+  recuperaciones:     { max: 80,   good: 40,  ok: 18  },
+  intercepciones:     { max: 80,   good: 40,  ok: 15  },
+  entradas:           { max: 100,  good: 50,  ok: 20  },
+  portero_paradas:    { max: 150,  good: 80,  ok: 40  },
+  portero_paradas_pct:{ max: 85,   good: 75,  ok: 65  },
+  goles_por_90:       { max: 1.2,  good: 0.6, ok: 0.3 },
+  asistencias_por_90: { max: 0.8,  good: 0.4, ok: 0.2 },
+  ga_por_90:          { max: 1.8,  good: 0.9, ok: 0.5 },
 }
 
 const METRICA_LABELS = {
   goles: 'Goles', asistencias: 'Asistencias', xG: 'xG', xA: 'xA',
   pases_completados: 'Pases %', regates: 'Regates',
   recuperaciones: 'Recuperaciones',
+  intercepciones: 'Intercepciones',
+  entradas: 'Entradas',
+  portero_paradas: 'Paradas',
+  portero_goles_encajados: 'Goles encajados',
+  portero_paradas_pct: 'Paradas %',
   minutos_jugados: 'Minutos jugados',
-  goles_por_90: 'Goles / 90 min',
-  asistencias_por_90: 'Asistencias / 90 min',
-  ga_por_90: 'G+A / 90 min',
+  goles_por_90: 'Goles / 90',
+  asistencias_por_90: 'Asistencias / 90',
+  ga_por_90: 'G+A / 90',
 }
 
-const SIN_BARRA = new Set(['minutos_jugados'])
+const SIN_BARRA = new Set(['minutos_jugados', 'portero_goles_encajados'])
+
+// ─── Métricas por posición ────────────────────────────────────────────────────
+function posGroup(posRaw) {
+  if (posRaw === 'GK') return 'GK'
+  if (posRaw === 'DF' || posRaw === 'DF,MF') return 'DF'
+  if (posRaw === 'MF' || posRaw === 'MF,DF') return 'MF'
+  if (posRaw === 'MF,FW' || posRaw === 'FW,MF') return 'EXT'
+  if (posRaw === 'FW') return 'FW'
+  return 'MF'
+}
+
+const METRICAS_POR_POS = {
+  GK:  ['minutos_jugados', 'pases_completados',
+         'portero_paradas', 'portero_goles_encajados', 'portero_paradas_pct'],
+  DF:  ['minutos_jugados', 'goles', 'asistencias', 'xG',
+         'recuperaciones', 'intercepciones', 'entradas', 'pases_completados'],
+  MF:  ['minutos_jugados', 'goles', 'asistencias', 'xG', 'xA',
+         'recuperaciones', 'intercepciones', 'pases_completados', 'regates'],
+  EXT: ['minutos_jugados', 'goles', 'asistencias', 'xG', 'xA',
+         'regates', 'pases_completados', 'goles_por_90', 'asistencias_por_90'],
+  FW:  ['minutos_jugados', 'goles', 'asistencias', 'xG', 'xA',
+         'goles_por_90', 'asistencias_por_90', 'recuperaciones', 'regates'],
+}
 
 const p90 = (val, min) => +(((val / min) * 90).toFixed(2))
 
@@ -73,6 +105,11 @@ function adaptarPerfilJugador(raw) {
           pases_completados:  s.pases_completados ?? null,
           regates:            s.regates           ?? null,
           recuperaciones:     s.recuperaciones    ?? null,
+          intercepciones:          s.intercepciones          ?? null,
+          entradas:                s.entradas                ?? null,
+          portero_paradas:         s.portero_paradas         ?? null,
+          portero_goles_encajados: s.portero_goles_encajados ?? null,
+          portero_paradas_pct:     s.portero_paradas_pct     ?? null,
           minutos_jugados:    mins,
           goles_por_90:       s.goles_por_90        ?? (mins && goles != null ? p90(goles, mins)          : null),
           asistencias_por_90: s.asistencias_por_90  ?? (mins && asists != null ? p90(asists, mins)        : null),
@@ -81,22 +118,27 @@ function adaptarPerfilJugador(raw) {
       })
     : null
 
-  const minutos = latest.minutos || 0
-  const goles   = latest.goles   || 0
-  const asis    = latest.asistencias || 0
+  const minutos = latest.minutos         ?? null
+  const goles   = latest.goles           ?? null
+  const asis    = latest.asistencias     ?? null
 
   const metricas = {
     goles,
-    asistencias:        asis,
-    xG:                 latest.xg           || 0,
-    xA:                 latest.xa           || 0,
-    pases_completados:  latest.pases_completados || 0,
-    regates:            latest.regates      || 0,
-    recuperaciones:     latest.recuperaciones || 0,
-    minutos_jugados:    minutos,
-    goles_por_90:       latest.goles_por_90        ?? p90(goles, minutos),
-    asistencias_por_90: latest.asistencias_por_90  ?? p90(asis, minutos),
-    ga_por_90:          latest.ga_por_90           ?? p90(goles + asis, minutos),
+    asistencias:             asis,
+    xG:                      latest.xg              ?? null,
+    xA:                      latest.xa              ?? null,
+    pases_completados:       latest.pases_completados ?? null,
+    regates:                 latest.regates         ?? null,
+    recuperaciones:          latest.recuperaciones  ?? null,
+    intercepciones:          latest.intercepciones          ?? null,
+    entradas:                latest.entradas                ?? null,
+    portero_paradas:         latest.portero_paradas         ?? null,
+    portero_goles_encajados: latest.portero_goles_encajados ?? null,
+    portero_paradas_pct:     latest.portero_paradas_pct     ?? null,
+    minutos_jugados:         minutos,
+    goles_por_90:       latest.goles_por_90       ?? (minutos && goles != null ? p90(goles, minutos) : null),
+    asistencias_por_90: latest.asistencias_por_90 ?? (minutos && asis  != null ? p90(asis,  minutos) : null),
+    ga_por_90:          latest.ga_por_90          ?? (minutos && goles != null && asis != null ? p90(goles + asis, minutos) : null),
   }
 
   const evolucion_valor = (raw.valor_mercado_historia || []).length > 0
@@ -108,6 +150,7 @@ function adaptarPerfilJugador(raw) {
   return {
     id:           raw.id,
     nombre:       raw.nombre,
+    posicion_raw: raw.posicion || null,
     posicion:     POS_MAP[raw.posicion] || raw.posicion || '',
     edad:         raw.edad   || 0,
     nacionalidad: raw.nacionalidad || '',
@@ -135,24 +178,27 @@ function getInitials(nombre) {
   return nombre.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase()
 }
 
-// Construye un objeto metricas completo a partir de una fila del historial
-// Coerce null → 0 para que radar/barras no reciban NaN
 function metricasDesdeTemporada(t) {
-  const g   = t.goles           ?? 0
-  const a   = t.asistencias     ?? 0
-  const min = t.minutos_jugados ?? 0
+  const g   = t.goles           ?? null
+  const a   = t.asistencias     ?? null
+  const min = t.minutos_jugados ?? null
   return {
     goles:              g,
     asistencias:        a,
-    xG:                 t.xG               ?? 0,
-    xA:                 t.xA               ?? 0,
-    pases_completados:  t.pases_completados ?? 0,
-    regates:            t.regates           ?? 0,
-    recuperaciones:     t.recuperaciones    ?? 0,
+    xG:                 t.xG               ?? null,
+    xA:                 t.xA               ?? null,
+    pases_completados:  t.pases_completados ?? null,
+    regates:            t.regates           ?? null,
+    recuperaciones:     t.recuperaciones    ?? null,
+    intercepciones:          t.intercepciones          ?? null,
+    entradas:                t.entradas                ?? null,
+    portero_paradas:         t.portero_paradas         ?? null,
+    portero_goles_encajados: t.portero_goles_encajados ?? null,
+    portero_paradas_pct:     t.portero_paradas_pct     ?? null,
     minutos_jugados:    min,
-    goles_por_90:       t.goles_por_90        ?? (min ? p90(g, min) : 0),
-    asistencias_por_90: t.asistencias_por_90  ?? (min ? p90(a, min) : 0),
-    ga_por_90:          t.ga_por_90            ?? (min ? p90(g + a, min) : 0),
+    goles_por_90:       t.goles_por_90        ?? (min && g != null ? p90(g, min) : null),
+    asistencias_por_90: t.asistencias_por_90  ?? (min && a != null ? p90(a, min) : null),
+    ga_por_90:          t.ga_por_90            ?? (min && g != null && a != null ? p90(g + a, min) : null),
   }
 }
 
@@ -350,12 +396,15 @@ function ValorTooltip({ active, payload, label }) {
   )
 }
 
-function StatPill({ label, value, sub }) {
-  const animated = useCountUp(value, 750)
+function StatPill({ label, value, sub, suffix = '' }) {
+  const isNull   = value == null
+  const animated = useCountUp(isNull ? 0 : value, 750)
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl px-5 py-4 flex flex-col gap-1 min-w-0">
       <span className="text-slate-500 text-xs font-semibold uppercase tracking-wider truncate">{label}</span>
-      <span className="text-3xl font-black text-white tabular-nums leading-none">{animated}</span>
+      <span className={`text-3xl font-black tabular-nums leading-none ${isNull ? 'text-slate-600' : 'text-white'}`}>
+        {isNull ? 'N/D' : `${animated}${suffix}`}
+      </span>
       {sub && <span className="text-slate-600 text-xs">{sub}</span>}
     </div>
   )
@@ -446,9 +495,18 @@ export default function Jugador() {
 
         <div className="relative flex flex-col sm:flex-row gap-6 sm:items-start">
           {/* Avatar */}
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500/25 to-blue-700/25
-                          border border-cyan-500/20 flex items-center justify-center shrink-0">
+          <div className="relative w-24 h-32 rounded-2xl bg-gradient-to-br from-cyan-500/25 to-blue-700/25
+                          border border-cyan-500/20 flex items-center justify-center shrink-0 overflow-hidden">
             <span className="text-2xl font-black text-cyan-400">{initials}</span>
+            {jugador.foto_url && (
+              <img
+                src={jugador.foto_url}
+                alt={jugador.nombre}
+                referrerPolicy="no-referrer"
+                className="absolute inset-0 w-full h-full object-cover object-top"
+                onError={e => e.currentTarget.remove()}
+              />
+            )}
           </div>
 
           {/* Info */}
@@ -536,10 +594,21 @@ export default function Jugador() {
           Temporada {labelTemporada}
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatPill label="Goles"       value={metricasActivas.goles}       sub="en la temporada" />
-          <StatPill label="Asistencias" value={metricasActivas.asistencias} sub="en la temporada" />
-          <StatPill label="xG"          value={metricasActivas.xG}          sub="expected goals" />
-          <StatPill label="xA"          value={metricasActivas.xA}          sub="expected assists" />
+          {jugador.posicion_raw === 'GK' ? (
+            <>
+              <StatPill label="Paradas"         value={metricasActivas.portero_paradas}         sub="en la temporada" />
+              <StatPill label="Goles encajados" value={metricasActivas.portero_goles_encajados} sub="en la temporada" />
+              <StatPill label="Paradas %"       value={metricasActivas.portero_paradas_pct}     sub="save percentage" suffix="%" />
+              <StatPill label="Minutos"         value={metricasActivas.minutos_jugados}          sub="jugados" />
+            </>
+          ) : (
+            <>
+              <StatPill label="Goles"       value={metricasActivas.goles}       sub="en la temporada" />
+              <StatPill label="Asistencias" value={metricasActivas.asistencias} sub="en la temporada" />
+              <StatPill label="xG"          value={metricasActivas.xG}          sub="expected goals" />
+              <StatPill label="xA"          value={metricasActivas.xA}          sub="expected assists" />
+            </>
+          )}
         </div>
       </div>
 
@@ -731,55 +800,69 @@ export default function Jugador() {
       )}
 
       {/* ── Radar + métricas (reactivos) ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* Radar */}
-        <div className="relative bg-slate-900 border border-slate-800 rounded-2xl p-6">
-          <Watermark />
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-4">
-            Perfil de rendimiento — {labelTemporada}
-          </p>
-          <PlayerRadarChart metricas={metricasActivas} />
-        </div>
+      {(() => {
+        const grupo       = posGroup(jugador.posicion_raw)
+        const metricKeys  = METRICAS_POR_POS[grupo] || METRICAS_POR_POS.MF
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Radar */}
+            <div className="relative bg-slate-900 border border-slate-800 rounded-2xl p-6">
+              <Watermark />
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-4">
+                Perfil de rendimiento — {labelTemporada}
+              </p>
+              <PlayerRadarChart metricas={metricasActivas} keys={metricKeys} />
+            </div>
 
-        {/* Metric bars */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-5">
-            Métricas {labelTemporada}
-          </p>
-          <div className="space-y-1">
-            {Object.entries(metricasActivas).map(([key, value]) => {
-              const label = METRICA_LABELS[key]
-              if (!label) return null
-              const t        = THRESHOLDS[key]
-              const pct      = t ? Math.min((value / t.max) * 100, 100) : 0
-              const col      = metricColor(key, value)
-              const barColor = col.includes('cyan')  ? 'bg-cyan-400'
-                             : col.includes('amber') ? 'bg-amber-400'
-                             : col.includes('red')   ? 'bg-red-500'
-                             : 'bg-slate-600'
-              const showBar  = !SIN_BARRA.has(key) && t
-              return (
-                <div key={key}
-                     className="flex items-center gap-3 py-2.5 border-b border-slate-800/50 last:border-0">
-                  <span className="text-slate-400 text-sm flex-1 min-w-0 truncate">{label}</span>
-                  {showBar ? (
-                    <div className="w-28 h-1.5 bg-slate-800 rounded-full overflow-hidden shrink-0">
-                      <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+            {/* Metric bars */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-5">
+                Métricas {labelTemporada}
+              </p>
+              <div className="space-y-1">
+                {metricKeys.map(key => {
+                  const label  = METRICA_LABELS[key]
+                  if (!label) return null
+                  const value  = metricasActivas[key]
+                  const isNull = value == null
+                  const t      = THRESHOLDS[key]
+                  const pct    = (!isNull && t) ? Math.min((value / t.max) * 100, 100) : 0
+                  const col    = (!isNull && t) ? metricColor(key, value) : 'text-slate-300'
+                  const barColor = col.includes('cyan')  ? 'bg-cyan-400'
+                                 : col.includes('amber') ? 'bg-amber-400'
+                                 : col.includes('red')   ? 'bg-red-500'
+                                 : 'bg-slate-600'
+                  const showBar = !SIN_BARRA.has(key) && t && !isNull
+                  return (
+                    <div key={key}
+                         className="flex items-center gap-3 py-2.5 border-b border-slate-800/50 last:border-0">
+                      <span className="text-slate-400 text-sm flex-1 min-w-0 truncate">{label}</span>
+                      {showBar ? (
+                        <div className="w-28 h-1.5 bg-slate-800 rounded-full overflow-hidden shrink-0">
+                          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      ) : (
+                        <div className="w-28 shrink-0" />
+                      )}
+                      <span className={`text-sm font-black w-12 text-right tabular-nums ${
+                        isNull              ? 'text-slate-600'
+                        : SIN_BARRA.has(key) ? 'text-slate-300'
+                        : col
+                      }`}>
+                        {isNull
+                          ? 'N/D'
+                          : key === 'minutos_jugados'
+                            ? value.toLocaleString('es')
+                            : value}
+                      </span>
                     </div>
-                  ) : (
-                    <div className="w-28 shrink-0" />
-                  )}
-                  <span className={`text-sm font-black w-12 text-right tabular-nums ${
-                    SIN_BARRA.has(key) ? 'text-slate-300' : col
-                  }`}>
-                    {key === 'minutos_jugados' ? value.toLocaleString('es') : value}
-                  </span>
-                </div>
-              )
-            })}
+                  )
+                })}
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        )
+      })()}
 
       {/* ── Tabla de estadísticas por temporada ── */}
       {historia && (() => {
@@ -788,11 +871,7 @@ export default function Jugador() {
           ...[...historia.temporadas].filter(t => !t.actual).reverse(),
         ]
 
-        // Mostrar xG/xA solo si alguna fila histórica tiene dato real
-        const historicas = filas.filter(t => !t.actual)
-        const showXG = historicas.some(t => t.xG != null)
-        const showXA = historicas.some(t => t.xA != null)
-
+        const esPortero = jugador.posicion_raw === 'GK'
         const thCls = "text-right first:text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap first:pl-6 last:pr-6"
         const rowCls = (sel) => `border-b border-slate-800/40 last:border-0 cursor-pointer transition-colors ${
           sel ? 'bg-cyan-400/5' : 'hover:bg-slate-800/40'
@@ -802,6 +881,11 @@ export default function Jugador() {
             {v != null ? v : ''}
           </td>
         )
+
+        // Mostrar xG/xA solo si alguna fila histórica tiene dato real (solo campo)
+        const historicas = filas.filter(t => !t.actual)
+        const showXG = !esPortero && historicas.some(t => t.xG != null)
+        const showXA = !esPortero && historicas.some(t => t.xA != null)
 
         return (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
@@ -814,14 +898,22 @@ export default function Jugador() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-800">
-                    {['Temporada','Equipo','Min','Goles','Asist.'].map(h => (
-                      <th key={h} className={thCls}>{h}</th>
-                    ))}
-                    {showXG && <th className={thCls}>xG</th>}
-                    {showXA && <th className={thCls}>xA</th>}
-                    {['G/90','A/90','Pases %','Regates','Recup.'].map(h => (
-                      <th key={h} className={thCls}>{h}</th>
-                    ))}
+                    {esPortero ? (
+                      ['Temporada','Equipo','Min','Paradas','Goles enc.','Paradas %','Pases %'].map(h => (
+                        <th key={h} className={thCls}>{h}</th>
+                      ))
+                    ) : (
+                      <>
+                        {['Temporada','Equipo','Min','Goles','Asist.'].map(h => (
+                          <th key={h} className={thCls}>{h}</th>
+                        ))}
+                        {showXG && <th className={thCls}>xG</th>}
+                        {showXA && <th className={thCls}>xA</th>}
+                        {['G/90','A/90','Pases %','Regates','Recup.'].map(h => (
+                          <th key={h} className={thCls}>{h}</th>
+                        ))}
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -843,15 +935,26 @@ export default function Jugador() {
                       <td className="px-4 py-3 text-right text-slate-400 tabular-nums text-xs">
                         {t.minutos_jugados?.toLocaleString('es') ?? ''}
                       </td>
-                      <TdNum v={t.goles}              k="goles" />
-                      <TdNum v={t.asistencias}        k="asistencias" />
-                      {showXG && <TdNum v={t.xG}      k="xG" />}
-                      {showXA && <TdNum v={t.xA}      k="xA" />}
-                      <TdNum v={t.goles_por_90}       k="goles_por_90" />
-                      <TdNum v={t.asistencias_por_90} k="asistencias_por_90" />
-                      <TdNum v={t.actual ? t.pases_completados : null} k="pases_completados" />
-                      <TdNum v={t.actual ? t.regates          : null} k="regates" />
-                      <TdNum v={t.actual ? t.recuperaciones   : null} k="recuperaciones" />
+                      {esPortero ? (
+                        <>
+                          <TdNum v={t.portero_paradas}         k="portero_paradas" />
+                          <TdNum v={t.portero_goles_encajados} k="portero_goles_encajados" />
+                          <TdNum v={t.portero_paradas_pct}     k="portero_paradas_pct" />
+                          <TdNum v={t.pases_completados}       k="pases_completados" />
+                        </>
+                      ) : (
+                        <>
+                          <TdNum v={t.goles}              k="goles" />
+                          <TdNum v={t.asistencias}        k="asistencias" />
+                          {showXG && <TdNum v={t.xG}      k="xG" />}
+                          {showXA && <TdNum v={t.xA}      k="xA" />}
+                          <TdNum v={t.goles_por_90}       k="goles_por_90" />
+                          <TdNum v={t.asistencias_por_90} k="asistencias_por_90" />
+                          <TdNum v={t.actual ? t.pases_completados : null} k="pases_completados" />
+                          <TdNum v={t.actual ? t.regates          : null} k="regates" />
+                          <TdNum v={t.actual ? t.recuperaciones   : null} k="recuperaciones" />
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>

@@ -49,6 +49,11 @@
   to   { opacity: 1; }
 }
 
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+
 @layer utilities {
   .animate-fade-up {
     animation: fade-up 0.4s ease both;
@@ -56,6 +61,10 @@
 
   .animate-fade-in {
     animation: fade-in 0.3s ease both;
+  }
+
+  .animate-modal-in {
+    animation: modal-in 0.22s ease-out both;
   }
 
   .skeleton {

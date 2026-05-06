@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
+import { LigaProvider } from './contexts/LigaContext'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
 import Home from './pages/Home'
@@ -27,11 +28,13 @@ function AnimatedRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col">
-        <Navbar />
-        <AnimatedRoutes />
-        <Footer />
-      </div>
+      <LigaProvider>
+        <div className="min-h-screen bg-slate-950 text-white flex flex-col">
+          <Navbar />
+          <AnimatedRoutes />
+          <Footer />
+        </div>
+      </LigaProvider>
     </BrowserRouter>
   )
 }

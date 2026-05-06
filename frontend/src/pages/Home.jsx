@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { jugadores as jugadoresFallback } from '../data/jugadores'
 import { getJugadores } from '../services/api'
+import { useLiga } from '../contexts/LigaContext'
 import PlayerCard from '../components/PlayerCard'
 
 function Spinner() {
@@ -20,6 +21,7 @@ const POSITION_FILTERS = [
   { value: 'Mediapunta',      icon: '🎯', label: 'Mediapuntas' },
   { value: 'Centrocampista',  icon: '⚙️', label: 'Centros' },
   { value: 'Defensa Central', icon: '🛡️', label: 'Defensas' },
+  { value: 'Portero',         icon: '🧤', label: 'Porteros' },
 ]
 
 const RANKING_METRICS = [
@@ -233,6 +235,7 @@ function IconFilter({ count }) {
 
 // ─── Página ───────────────────────────────────────────────────────────────────
 export default function Home() {
+  const { ligaId } = useLiga()
   const [query,          setQuery]          = useState('')
   const [posicion,       setPosicion]       = useState('Todas')
   const [loading,        setLoading]        = useState(true)
@@ -249,7 +252,7 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    getJugadores()
+    getJugadores({ liga_id: ligaId })
       .then(data => {
         if (cancelled) return
         setJugadores(data)
@@ -263,7 +266,7 @@ export default function Home() {
         setLoading(false)
       })
     return () => { cancelled = true }
-  }, [])
+  }, [ligaId])
 
   // ── Aplicar / limpiar ──
   function aplicar() {

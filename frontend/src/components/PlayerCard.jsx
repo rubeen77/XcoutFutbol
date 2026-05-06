@@ -14,6 +14,9 @@ const THRESHOLDS = {
   goles_por_90:      { max: 1.2,  top: 0.55, good: 0.28, ok: 0.07 },
   asistencias_por_90:{ max: 0.8,  top: 0.38, good: 0.18, ok: 0.04 },
   ga_por_90:         { max: 1.8,  top: 0.85, good: 0.42, ok: 0.1 },
+  portero_paradas:         { max: 120, top: 90,  good: 60,  ok: 30 },
+  portero_paradas_pct:     { max: 100, top: 80,  good: 72,  ok: 64 },
+  portero_goles_encajados: { max: 60,  top: 18,  good: 28,  ok: 40, inverted: true },
 }
 
 const METRIC_LABELS = {
@@ -21,6 +24,8 @@ const METRIC_LABELS = {
   pases_completados: 'Pases %', regates: 'Regates',
   recuperaciones: 'Recup.',
   goles_por_90: 'G/90', asistencias_por_90: 'A/90', ga_por_90: 'G+A/90',
+  portero_paradas: 'Paradas', portero_goles_encajados: 'Goles enc.',
+  portero_paradas_pct: 'Paradas %',
 }
 
 const POSICION_METRICS = {
@@ -30,7 +35,7 @@ const POSICION_METRICS = {
   'Centrocampista':  ['pases_completados', 'recuperaciones', 'regates', 'asistencias'],
   'Defensa Central': ['recuperaciones', 'pases_completados', 'goles', 'xG'],
   'Lateral':         ['asistencias', 'regates', 'recuperaciones', 'pases_completados'],
-  'Portero':         ['pases_completados', 'recuperaciones', 'goles', 'xG'],
+  'Portero':         ['portero_paradas', 'portero_goles_encajados', 'portero_paradas_pct', 'pases_completados'],
 }
 
 const POSICION_BADGE = {
@@ -55,7 +60,13 @@ const AVATAR_GRADIENTS = [
 
 function getColor(key, value) {
   const t = THRESHOLDS[key]
-  if (!t)              return { text: 'text-slate-400', bar: 'bg-slate-600' }
+  if (!t) return { text: 'text-slate-400', bar: 'bg-slate-600' }
+  if (t.inverted) {
+    if (value <= t.top)  return { text: 'text-cyan-300',  bar: 'bg-cyan-300' }
+    if (value <= t.good) return { text: 'text-cyan-400',  bar: 'bg-cyan-400' }
+    if (value <= t.ok)   return { text: 'text-amber-400', bar: 'bg-amber-400' }
+    return                      { text: 'text-red-400',   bar: 'bg-red-500' }
+  }
   if (value >= t.top)  return { text: 'text-cyan-300',  bar: 'bg-cyan-300' }
   if (value >= t.good) return { text: 'text-cyan-400',  bar: 'bg-cyan-400' }
   if (value >= t.ok)   return { text: 'text-amber-400', bar: 'bg-amber-400' }
@@ -67,9 +78,15 @@ function getInitials(nombre) {
 }
 
 function MetricRow({ metricKey, value }) {
+  const isNull = value == null
   const t = THRESHOLDS[metricKey]
-  const pct = t ? Math.min((value / t.max) * 100, 100) : 50
-  const { text, bar } = getColor(metricKey, value)
+  const pct = (!isNull && t)
+    ? t.inverted
+      ? Math.max(0, Math.min(((t.max - value) / t.max) * 100, 100))
+      : Math.min((value / t.max) * 100, 100)
+    : 0
+  const { text, bar } = isNull ? { text: 'text-slate-600', bar: 'bg-slate-700' } : getColor(metricKey, value)
+  const showBar = !isNull && !!t
 
   return (
     <div className="flex items-center gap-2.5">
@@ -77,13 +94,15 @@ function MetricRow({ metricKey, value }) {
         {METRIC_LABELS[metricKey]}
       </span>
       <div className="flex-1 h-1 bg-slate-800 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full ${bar}`}
-          style={{ width: `${pct}%`, transition: 'width 0.6s ease' }}
-        />
+        {showBar && (
+          <div
+            className={`h-full rounded-full ${bar}`}
+            style={{ width: `${pct}%`, transition: 'width 0.6s ease' }}
+          />
+        )}
       </div>
-      <span className={`text-xs font-bold tabular-nums w-7 text-right ${text}`}>
-        {value}
+      <span className={`text-xs font-bold tabular-nums w-7 text-right ${isNull ? 'text-slate-600' : text}`}>
+        {isNull ? 'N/D' : value}
       </span>
     </div>
   )
@@ -103,10 +122,19 @@ export default function PlayerCard({ jugador }) {
                       hover:scale-[1.02] hover:shadow-xl hover:shadow-cyan-950/60">
 
         {/* Avatar + name */}
-        <div className="flex items-center gap-3 mb-4">
-          <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${gradient} border border-white/5
-                          flex items-center justify-center shrink-0`}>
+        <div className="flex items-start gap-3 mb-4">
+          <div className={`relative w-12 h-16 rounded-xl bg-gradient-to-br ${gradient} border border-white/5
+                          flex items-center justify-center shrink-0 overflow-hidden`}>
             <span className="text-sm font-black text-white">{initials}</span>
+            {jugador.foto_url && (
+              <img
+                src={jugador.foto_url}
+                alt={jugador.nombre}
+                referrerPolicy="no-referrer"
+                className="absolute inset-0 w-full h-full object-cover object-top"
+                onError={e => e.currentTarget.remove()}
+              />
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <h3 className="font-bold text-white text-sm leading-tight truncate
@@ -140,20 +168,34 @@ export default function PlayerCard({ jugador }) {
 
         {/* Rate stats strip */}
         <div className="mt-3.5 pt-3 border-t border-slate-800/60 grid grid-cols-4 gap-1 text-center">
-          {[
-            { key: 'minutos_jugados', label: 'Min' },
-            { key: 'goles_por_90',    label: 'G/90' },
-            { key: 'asistencias_por_90', label: 'A/90' },
-            { key: 'ga_por_90',       label: 'G+A/90' },
-          ].map(({ key, label }) => {
+          {(jugador.posicion === 'Portero'
+            ? [
+                { key: 'minutos_jugados',        label: 'Min' },
+                { key: 'portero_paradas_pct',    label: 'Sv%' },
+                { key: 'portero_paradas',        label: 'Par.' },
+                { key: 'portero_goles_encajados',label: 'GA' },
+              ]
+            : [
+                { key: 'minutos_jugados',    label: 'Min' },
+                { key: 'goles_por_90',       label: 'G/90' },
+                { key: 'asistencias_por_90', label: 'A/90' },
+                { key: 'ga_por_90',          label: 'G+A/90' },
+              ]
+          ).map(({ key, label }) => {
             const val = jugador.metricas[key]
-            const { text } = getColor(key, val)
+            const isNull = val == null
+            const { text } = getColor(key, val ?? 0)
             return (
               <div key={key} className="flex flex-col gap-0.5">
                 <span className={`text-xs font-black tabular-nums leading-none ${
-                  key === 'minutos_jugados' ? 'text-slate-300' : text
+                  isNull              ? 'text-slate-600'
+                  : key === 'minutos_jugados' ? 'text-slate-300'
+                  : text
                 }`}>
-                  {key === 'minutos_jugados' ? val?.toLocaleString('es') : val}
+                  {isNull ? '—'
+                    : key === 'minutos_jugados' ? val?.toLocaleString('es')
+                    : key === 'portero_paradas_pct' ? `${val}%`
+                    : val}
                 </span>
                 <span className="text-slate-600 text-[10px]">{label}</span>
               </div>

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { useLiga } from '../contexts/LigaContext'
 
 function XcoutLogo() {
   return (
@@ -59,77 +60,6 @@ function XcoutLogo() {
   )
 }
 
-const CLUBES = [
-  {
-    categoria: 'España',
-    ligas: ['LaLiga', 'LaLiga Hypermotion', 'Copa del Rey'],
-  },
-  {
-    categoria: 'Europa',
-    ligas: ['Champions League', 'Europa League', 'Conference League'],
-  },
-  {
-    categoria: 'Inglaterra',
-    ligas: ['Premier League', 'Championship', 'FA Cup', 'Carabao Cup'],
-  },
-  {
-    categoria: 'Grandes Ligas',
-    ligas: ['Bundesliga', 'Serie A', 'Ligue 1'],
-  },
-  {
-    categoria: 'Latinoamérica',
-    ligas: ['Liga MX', 'Liga Profesional', 'Brasileirão', 'Primera División', 'Liga BetPlay', 'Copa Libertadores', 'Copa Sudamericana'],
-  },
-  {
-    categoria: 'Otros',
-    ligas: ['MLS', 'Saudi Pro League'],
-  },
-]
-
-const SELECCIONES = [
-  {
-    categoria: 'Europa',
-    ligas: ['Eurocopa', 'UEFA Nations League', 'Clasificación Eurocopa'],
-  },
-  {
-    categoria: 'Sudamérica',
-    ligas: ['Copa América', 'Eliminatorias Sudamericanas'],
-  },
-  {
-    categoria: 'Mundial',
-    ligas: ['Mundial FIFA', 'Clasificación Mundial'],
-  },
-]
-
-const LIGAS = [...CLUBES, ...SELECCIONES]
-
-function LigaGrupo({ categoria, ligas, ligaSel, onSelect }) {
-  return (
-    <div>
-      <p className="px-4 pt-2.5 pb-1 text-[10px] font-bold text-slate-600
-                    uppercase tracking-widest select-none">
-        {categoria}
-      </p>
-      {ligas.map(liga => (
-        <button
-          key={liga}
-          onClick={() => onSelect(liga)}
-          className={`w-full text-left px-4 py-2 text-sm font-medium
-                      transition-colors duration-100 ${
-            liga === ligaSel
-              ? 'text-cyan-400 bg-cyan-400/5'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
-          }`}
-        >
-          {liga === ligaSel && (
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 mr-2 mb-0.5" />
-          )}
-          {liga}
-        </button>
-      ))}
-    </div>
-  )
-}
 
 const links = [
   { to: '/', label: 'Jugadores' },
@@ -142,10 +72,10 @@ const links = [
 export default function Navbar() {
   const [open, setOpen] = useState(false)
   const [ligaOpen, setLigaOpen] = useState(false)
-  const [ligaSel, setLigaSel] = useState('LaLiga')
   const [backendOk, setBackendOk] = useState(null)
   const dropRef = useRef(null)
   const { pathname } = useLocation()
+  const { ligaId, setLigaId, ligaActual, ligas } = useLiga()
 
   useEffect(() => {
     function ping() {
@@ -241,14 +171,8 @@ export default function Navbar() {
                          border border-slate-800 hover:border-cyan-400/40 hover:text-cyan-400
                          rounded-full px-3 py-1.5 transition-all duration-150 group"
             >
-              <svg className="w-3 h-3 text-slate-500 group-hover:text-cyan-400 transition-colors"
-                   fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="10" strokeWidth="2" />
-                <path strokeWidth="2" strokeLinecap="round"
-                      d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10
-                         15.3 15.3 0 0 1-4-10A15.3 15.3 0 0 1 12 2z" />
-              </svg>
-              {ligaSel}
+              <span>{ligaActual.emoji}</span>
+              {ligaActual.nombre}
               <svg className={`w-3 h-3 text-slate-600 transition-transform duration-150 ${ligaOpen ? 'rotate-180' : ''}`}
                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -256,36 +180,30 @@ export default function Navbar() {
             </button>
 
             {ligaOpen && (
-              <div className="absolute top-full right-0 mt-2 w-56
+              <div className="absolute top-full right-0 mt-2 w-52
                              bg-slate-900 border border-slate-800 rounded-2xl
-                             shadow-2xl shadow-black/40 overflow-hidden z-50
-                             max-h-[70vh] overflow-y-auto scrollbar-hide">
-
-                {/* Sección CLUBES */}
+                             shadow-2xl shadow-black/40 overflow-hidden z-50">
                 <p className="px-4 pt-3 pb-1 text-[10px] font-black text-slate-500
                               uppercase tracking-widest select-none">
-                  Clubes
+                  Liga activa
                 </p>
-                {CLUBES.map(({ categoria, ligas }) => (
-                  <LigaGrupo key={categoria} categoria={categoria} ligas={ligas}
-                             ligaSel={ligaSel} onSelect={liga => { setLigaSel(liga); setLigaOpen(false) }} />
-                ))}
-
-                {/* Divisor SELECCIONES */}
-                <div className="mx-3 my-2 flex items-center gap-2">
-                  <div className="flex-1 h-px bg-slate-700/60" />
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest
-                                   px-2 py-0.5 rounded-full border border-slate-700/60 select-none
-                                   bg-slate-800/60 whitespace-nowrap">
-                    Selecciones
-                  </span>
-                  <div className="flex-1 h-px bg-slate-700/60" />
-                </div>
-
-                {/* Sección SELECCIONES */}
-                {SELECCIONES.map(({ categoria, ligas }) => (
-                  <LigaGrupo key={categoria} categoria={categoria} ligas={ligas}
-                             ligaSel={ligaSel} onSelect={liga => { setLigaSel(liga); setLigaOpen(false) }} />
+                {ligas.map(liga => (
+                  <button
+                    key={liga.id}
+                    onClick={() => { setLigaId(liga.id); setLigaOpen(false) }}
+                    className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium
+                                transition-colors duration-100 ${
+                      liga.id === ligaId
+                        ? 'text-cyan-400 bg-cyan-400/5'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
+                    }`}
+                  >
+                    <span>{liga.emoji}</span>
+                    <span className="flex-1 text-left">{liga.nombre}</span>
+                    {liga.id === ligaId && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
+                    )}
+                  </button>
                 ))}
                 <div className="h-2" />
               </div>
@@ -332,30 +250,26 @@ export default function Navbar() {
           {/* Liga selector móvil */}
           <div className="border-t border-slate-800/60 px-4 py-3">
             <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 px-1">
-              Clubes
+              Liga activa
             </p>
-            <div className="max-h-56 overflow-y-auto scrollbar-hide">
-              {CLUBES.map(({ categoria, ligas }) => (
-                <LigaGrupo key={categoria} categoria={categoria} ligas={ligas}
-                           ligaSel={ligaSel} onSelect={liga => { setLigaSel(liga); setOpen(false) }} />
-              ))}
-
-              {/* Divisor móvil */}
-              <div className="flex items-center gap-2 my-2 px-1">
-                <div className="flex-1 h-px bg-slate-700/60" />
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest
-                                 px-2 py-0.5 rounded-full border border-slate-700/60 bg-slate-800/60
-                                 select-none whitespace-nowrap">
-                  Selecciones
-                </span>
-                <div className="flex-1 h-px bg-slate-700/60" />
-              </div>
-
-              {SELECCIONES.map(({ categoria, ligas }) => (
-                <LigaGrupo key={categoria} categoria={categoria} ligas={ligas}
-                           ligaSel={ligaSel} onSelect={liga => { setLigaSel(liga); setOpen(false) }} />
-              ))}
-            </div>
+            {ligas.map(liga => (
+              <button
+                key={liga.id}
+                onClick={() => { setLigaId(liga.id); setOpen(false) }}
+                className={`w-full flex items-center gap-2.5 px-1 py-2.5 text-sm font-medium
+                            transition-colors duration-100 ${
+                  liga.id === ligaId
+                    ? 'text-cyan-400'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <span>{liga.emoji}</span>
+                <span className="flex-1 text-left">{liga.nombre}</span>
+                {liga.id === ligaId && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
+                )}
+              </button>
+            ))}
           </div>
         </div>
       )}

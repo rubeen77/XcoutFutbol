@@ -22,10 +22,11 @@ def listar_equipos(
 ):
     res = (
         supabase.table("equipos")
-        .select("id, nombre, liga_id, temporada, ligas(nombre, pais)")
+        .select("id, nombre, liga_id, temporada, posicion_clasificacion, puntos, escudo_url, ligas(nombre, pais)")
         .eq("liga_id", liga_id)
         .eq("temporada", temporada)
-        .order("nombre")
+        .order("posicion_clasificacion", nullsfirst=False)
+        .limit(100)
         .execute()
     )
     return {"total": len(res.data), "equipos": res.data}

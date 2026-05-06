@@ -54,6 +54,9 @@ function adaptarJugador(raw) {
       goles_por_90:      stats.goles_por_90        ?? p90(goles, minutos),
       asistencias_por_90:stats.asistencias_por_90  ?? p90(asistencias, minutos),
       ga_por_90:         stats.ga_por_90           ?? p90(goles + asistencias, minutos),
+      portero_paradas:         stats.portero_paradas         ?? null,
+      portero_goles_encajados: stats.portero_goles_encajados ?? null,
+      portero_paradas_pct:     stats.portero_paradas_pct     ?? null,
     },
   }
 }
@@ -104,10 +107,10 @@ export async function getJugadores(filtros = {}) {
   const params = new URLSearchParams({
     limit:     600,
     temporada: '2526',
+    liga_id:   filtros.liga_id  || 1,
     orden:     filtros.orden     || 'goles',
     orden_dir: filtros.orden_dir || 'desc',
   })
-  if (filtros.liga_id)           params.set('liga_id', filtros.liga_id)
   if (filtros.equipo_id)         params.set('equipo_id', filtros.equipo_id)
   if (filtros.min_goles != null) params.set('min_goles', filtros.min_goles)
   if (filtros.max_valor != null) params.set('max_valor_mercado', filtros.max_valor)
@@ -137,12 +140,55 @@ export async function getRanking(metrica = 'goles', limit = 20) {
 
 /** Lista de equipos de una liga. */
 export async function getEquipos(liga_id = 1) {
-  return apiFetch(`/equipos?liga_id=${liga_id}`)
+  return apiFetch(`/equipos?liga_id=${liga_id}&temporada=2526`)
 }
 
-/** Partidos, opcionalmente filtrados por jornada. */
-export async function getPartidos(jornada) {
-  const params = new URLSearchParams({ liga_id: 1, temporada: '2526' })
-  if (jornada != null) params.set('jornada', jornada)
+/** Top N por métrica, filtrado por liga. */
+export async function getRankingLiga(metrica = 'goles', liga_id = 1, limit = 20) {
+  const apiMetrica = METRIC_KEY_TO_API[metrica] ?? metrica
+  const data = await apiFetch(
+    `/jugadores/ranking?metrica=${apiMetrica}&limit=${limit}&temporada=2526&liga_id=${liga_id}`
+  )
+  return data.ranking.map(r => adaptarRankingItem(r, metrica))
+}
+
+/** Perfil completo de un equipo (plantilla + partidos + totales). */
+export async function getEquipoDetalle(equipo_id) {
+  return apiFetch(`/equipos/${equipo_id}?temporada=2526`)
+}
+
+/** Detalle de un partido por id. */
+export async function getPartidoDetalle(id) {
+  return apiFetch(`/partidos/${id}`)
+}
+
+/** Todos los partidos de un equipo en la temporada actual. */
+export async function getPartidosPorEquipo(equipo_id, liga_id = 1) {
+  const params = new URLSearchParams({ liga_id, temporada: '2526', equipo_id })
   return apiFetch(`/partidos?${params}`)
+}
+
+// ─── Insights ────────────────────────────────────────────────────────────────
+
+export async function getInsightsRankings(temporada = '2526', liga_id = 1) {
+  return apiFetch(`/insights/rankings?temporada=${temporada}&liga_id=${liga_id}`)
+}
+export async function getInsightsDatosCuriosos(temporada = '2526', liga_id = 1) {
+  return apiFetch(`/insights/datos-curiosos?temporada=${temporada}&liga_id=${liga_id}`)
+}
+export async function getInsightsQuiz(temporada = '2526', liga_id = 1) {
+  return apiFetch(`/insights/quiz?temporada=${temporada}&liga_id=${liga_id}`)
+}
+
+/** Partidos, opcionalmente filtrados por jornada y/o estado. */
+export async function getPartidos(jornada, { estado, liga_id = 1 } = {}) {
+  const params = new URLSearchParams({ liga_id, temporada: '2526' })
+  if (jornada != null) params.set('jornada', jornada)
+  if (estado)          params.set('estado', estado)
+  return apiFetch(`/partidos?${params}`)
+}
+
+/** Ligas disponibles desde Supabase. */
+export async function getLeagues() {
+  return apiFetch('/leagues')
 }

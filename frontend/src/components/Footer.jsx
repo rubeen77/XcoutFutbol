@@ -49,17 +49,17 @@ export default function Footer() {
                 </span>
                 <span className="text-white font-semibold">cout</span>
               </span>
-              <span className="text-slate-700 text-xs">·</span>
-              <span className="text-slate-600 text-xs">© 2025</span>
+              <span className="text-slate-600 text-xs">·</span>
+              <span className="text-slate-500 text-xs">© 2026</span>
             </div>
           </div>
 
           {/* Links */}
-          <nav className="flex items-center gap-5 text-xs text-slate-600">
-            <a href="#" className="hover:text-slate-400 transition-colors">Términos de uso</a>
-            <a href="#" className="hover:text-slate-400 transition-colors">Privacidad</a>
-            <span className="text-slate-800">·</span>
-            <span className="text-slate-700">LaLiga 2024/25</span>
+          <nav className="flex items-center gap-5 text-xs text-slate-500">
+            <a href="#" className="hover:text-slate-300 transition-colors">Términos de uso</a>
+            <a href="#" className="hover:text-slate-300 transition-colors">Privacidad</a>
+            <span className="text-slate-700">·</span>
+            <span className="text-slate-500">LaLiga 2025/26</span>
           </nav>
 
         </div>

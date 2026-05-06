@@ -6,13 +6,17 @@ Fuente: Transfermarkt.es (cloudscraper maneja Cloudflare + browser fingerprint)
 Estrategia (minimo de requests):
   1.  1 request  -> LaLiga page -> 20 IDs de equipo
   2. 20 requests -> plantilla de cada equipo -> nombre, foto, valor actual
-  3. Cruce por nombre normalizado con jugadores en Supabase
+  3. Cruce por nombre normalizado con jugadores de LaLiga en Supabase
   4.  1 request  -> upsert batch jugadores (foto + valor)
   5.  1 request  -> upsert batch valor_mercado_historia (temporada actual)
   Total: ~23 requests HTTP
 
-Historial multi-temporada: requiere 1 request por jugador (~586).
-Activado con CARGAR_HISTORIAL = True. Usar con rate limit adecuado.
+Historial multi-temporada: requiere 1 request por jugador.
+Activado con CARGAR_HISTORIAL = True.
+
+Uso (desde backend/):
+  conda activate xcout
+  python scrapers/transfermarkt_laliga_full.py
 """
 
 import re
@@ -37,13 +41,12 @@ log = logging.getLogger(__name__)
 TEMPORADA        = "2526"
 LIGA_ID          = 1
 TM_SEASON        = 2025
-TM_LIGA_CODE     = "ES1"
+TM_LIGA_CODE     = "ES1"      # código LaLiga en Transfermarkt
 CARGAR_HISTORIAL = True
 REQUEST_DELAY    = 2.0
 
 TM_BASE = "https://www.transfermarkt.es"
 
-# cloudscraper imita un navegador real y resuelve desafios Cloudflare
 _scraper = cloudscraper.create_scraper(
     browser={"browser": "chrome", "platform": "windows", "mobile": False}
 )
@@ -61,12 +64,6 @@ def _norm(text: str) -> str:
 
 
 def _parse_valor(text: str) -> Optional[float]:
-    """
-    Convierte texto TM a millones de euros:
-      "18,00 mill."  -> 18.0
-      "500 mil"      -> 0.5
-      "-"            -> None
-    """
     if not text or text.strip() in ("-", ""):
         return None
     text = text.strip().lower().replace(",", ".")
@@ -100,16 +97,17 @@ def _get(url: str) -> Optional[BeautifulSoup]:
 
 def get_team_ids() -> list[dict]:
     log.info("[1/5] Obteniendo equipos de LaLiga desde Transfermarkt...")
-    url = f"{TM_BASE}/laliga/startseite/wettbewerb/{TM_LIGA_CODE}/saison_id/{TM_SEASON}"
+    url = f"{TM_BASE}/primera-division/startseite/wettbewerb/{TM_LIGA_CODE}/saison_id/{TM_SEASON}"
+    log.info("      URL: %s", url)
     soup = _get(url)
     if not soup:
         raise RuntimeError("No se pudo cargar la pagina de LaLiga en Transfermarkt")
 
     teams = []
-    seen = set()
+    seen  = set()
     for a in soup.select("td.hauptlink a[href*='/startseite/verein/']"):
         href = a.get("href", "")
-        m = re.search(r"(/[^/]+/startseite/verein/(\d+))", href)
+        m    = re.search(r"(/[^/]+/startseite/verein/(\d+))", href)
         if not m:
             continue
         slug_path = m.group(1)
@@ -125,6 +123,8 @@ def get_team_ids() -> list[dict]:
         })
 
     log.info("      %d equipos encontrados.", len(teams))
+    for t in teams:
+        log.info("      ID=%-6s  %s", t["tm_id"], t["name"])
     return teams
 
 
@@ -197,7 +197,7 @@ def scrape_all_squads(teams: list[dict]) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 _MONTH_ABBR = {
-    "jan": 1, "ene": 1, "feb": 2, "mar": 3, "mar": 3, "abr": 4, "apr": 4,
+    "jan": 1, "ene": 1, "feb": 2, "mar": 3, "abr": 4, "apr": 4,
     "may": 5, "mai": 5, "jun": 6, "jul": 7, "ago": 8, "aug": 8,
     "sep": 9, "okt": 10, "oct": 10, "nov": 11, "dic": 12, "dez": 12, "dec": 12,
 }
@@ -213,11 +213,11 @@ def _date_to_temporada(date_str: str) -> Optional[str]:
             return f"{str(y)[2:]}{str(y + 1)[2:]}"
         except ValueError:
             pass
-    low = s.lower()
+    low    = s.lower()
     year_m = re.search(r"(\d{4})", s)
     if not year_m:
         return None
-    year = int(year_m.group(1))
+    year  = int(year_m.group(1))
     month = 9
     for abbr, num in _MONTH_ABBR.items():
         if abbr in low:
@@ -228,13 +228,11 @@ def _date_to_temporada(date_str: str) -> Optional[str]:
 
 
 def scrape_market_history(player_url: str) -> list[dict]:
-    """Extrae historial de valor via ceapi de TM."""
     m = re.search(r"/spieler/(\d+)", player_url)
     if not m:
         return []
     player_id = m.group(1)
-
-    api_url = f"{TM_BASE}/ceapi/marketValueDevelopment/graph/{player_id}"
+    api_url   = f"{TM_BASE}/ceapi/marketValueDevelopment/graph/{player_id}"
     try:
         r = _scraper.get(api_url, timeout=15)
         if r.status_code != 200:
@@ -259,29 +257,42 @@ def scrape_market_history(player_url: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Paso 4: cruce con jugadores en Supabase
+# Paso 4: cruce con jugadores de LaLiga en Supabase
 # ---------------------------------------------------------------------------
 
 def load_supabase_jugadores() -> pd.DataFrame:
-    log.info("[3/5] Leyendo jugadores desde Supabase...")
-    res = (
-        supabase.table("jugadores")
-        .select("id, nombre, equipo_id, equipos(nombre)")
-        .execute()
+    log.info("[3/5] Leyendo jugadores LaLiga desde Supabase (liga_id=%d)...", LIGA_ID)
+
+    eq_res = (
+        supabase.table("equipos").select("id, nombre")
+        .eq("liga_id", LIGA_ID).eq("temporada", TEMPORADA).execute()
     )
+    eq_ids   = [e["id"] for e in (eq_res.data or [])]
+    eq_names = {e["id"]: e["nombre"] for e in (eq_res.data or [])}
+    log.info("      %d equipos LaLiga.", len(eq_ids))
+
+    all_jug = []
+    for i in range(0, len(eq_ids), 50):
+        res = (
+            supabase.table("jugadores").select("id, nombre, equipo_id")
+            .in_("equipo_id", eq_ids[i:i+50]).execute()
+        )
+        all_jug.extend(res.data or [])
+
     rows = []
-    for r in res.data:
-        eq = r.get("equipos") or {}
+    for r in all_jug:
+        eq_nombre = eq_names.get(r.get("equipo_id"), "")
         rows.append({
             "jugador_id":    r["id"],
             "nombre":        r["nombre"],
             "nombre_norm":   _norm(r["nombre"]),
             "equipo_id":     r["equipo_id"],
-            "equipo_nombre": eq.get("nombre", ""),
-            "equipo_norm":   _norm(eq.get("nombre", "")),
+            "equipo_nombre": eq_nombre,
+            "equipo_norm":   _norm(eq_nombre),
         })
+
     df = pd.DataFrame(rows)
-    log.info("      %d jugadores en Supabase.", len(df))
+    log.info("      %d jugadores LaLiga en Supabase.", len(df))
     return df
 
 
@@ -295,7 +306,7 @@ def match_players(df_supa: pd.DataFrame, df_tm: pd.DataFrame) -> pd.DataFrame:
         name_idx.setdefault(r["nombre_norm"], i)
 
     matched_exact = matched_name = unmatched = 0
-    tm_idx_list = []
+    tm_idx_list   = []
 
     for _, row in df_supa.iterrows():
         key = (row["nombre_norm"], row["equipo_norm"])
@@ -377,9 +388,9 @@ def upsert_historial(df: pd.DataFrame) -> int:
 # ---------------------------------------------------------------------------
 
 def run():
-    log.info("=" * 52)
-    log.info(" Transfermarkt Scraper -- LaLiga %s", TEMPORADA)
-    log.info("=" * 52)
+    log.info("=" * 56)
+    log.info(" Transfermarkt Scraper -- LaLiga %s  (liga_id=%d)", TEMPORADA, LIGA_ID)
+    log.info("=" * 56)
 
     teams     = get_team_ids()
     df_tm     = scrape_all_squads(teams)
@@ -394,8 +405,8 @@ def run():
         total_j = len(jugadores_con_url)
         log.info("Cargando historial multi-temporada (%d jugadores)...", total_j)
 
-        BATCH = 50
-        hist_rows = []
+        BATCH      = 50
+        hist_rows  = []
         hist_total = 0
 
         for i, (_, r) in enumerate(jugadores_con_url.iterrows(), 1):
@@ -420,14 +431,15 @@ def run():
 
         log.info("Historial completado: %d entradas totales.", hist_total)
 
-    log.info("=" * 52)
+    log.info("=" * 56)
     log.info(" RESUMEN")
+    log.info("  Equipos TM scrapeados          : %d", len(teams))
     log.info("  Jugadores TM scrapeados        : %d", len(df_tm))
     log.info("  Jugadores en Supabase          : %d", len(df_supa))
     log.info("  Matches encontrados            : %d", len(df_merged))
     log.info("  Jugadores actualizados         : %d", jugadores_ok)
     log.info("  Historial insertado            : %d", historial_ok)
-    log.info("=" * 52)
+    log.info("=" * 56)
 
 
 if __name__ == "__main__":

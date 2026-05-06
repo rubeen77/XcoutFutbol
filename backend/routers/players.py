@@ -40,6 +40,7 @@ def listar_jugadores(
             "goles, asistencias, xg, xa, minutos, "
             "pases_completados, regates, presiones, recuperaciones, "
             "goles_por_90, asistencias_por_90, ga_por_90, "
+            "portero_paradas, portero_goles_encajados, portero_paradas_pct, "
             "jugadores(id, nombre, posicion, edad, nacionalidad, foto_url, valor_mercado, equipo_id, "
             "  equipos(id, nombre, liga_id))"
         )
@@ -94,6 +95,7 @@ def ranking_jugadores(
     temporada: str = Query("2526"),
     limit:     int = Query(20, ge=1, le=100),
     posicion:  Optional[str] = Query(None, description="FW, MF, DF, GK"),
+    liga_id:   Optional[int] = Query(None),
 ):
     if metrica not in METRICAS_VALIDAS:
         raise HTTPException(
@@ -128,6 +130,8 @@ def ranking_jugadores(
         .order(metrica, desc=True)
         .limit(limit)
     )
+    if liga_id is not None:
+        q = q.eq("liga_id", liga_id)
     res = q.execute()
     datos = res.data
 
@@ -154,7 +158,9 @@ def perfil_jugador(jugador_id: int):
             "equipos(id, nombre, liga_id), "
             "estadisticas_jugador(temporada, liga_id, goles, asistencias, xg, xa, minutos, "
             "  pases_completados, regates, presiones, recuperaciones, "
-            "  goles_por_90, asistencias_por_90, ga_por_90), "
+            "  goles_por_90, asistencias_por_90, ga_por_90, "
+            "  portero_paradas, portero_goles_encajados, portero_paradas_pct, "
+            "  intercepciones, entradas, tiros_totales, tiros_a_puerta), "
             "valor_mercado_historia(temporada, valor)"
         )
         .eq("id", jugador_id)

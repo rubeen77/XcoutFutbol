@@ -5,6 +5,7 @@ import {
 } from 'recharts'
 import { jugadores as jugadoresFallback } from '../data/jugadores'
 import { getJugadores } from '../services/api'
+import { useLiga } from '../contexts/LigaContext'
 import PlayerRadarChart from '../components/RadarChart'
 import { ScoutingSkeleton } from '../components/Skeletons'
 
@@ -13,6 +14,7 @@ const MAX_VALUES = {
   goles: 35, asistencias: 20, xG: 28, xA: 15,
   pases_completados: 95, regates: 120, recuperaciones: 80,
   minutos_jugados: 3600, goles_por_90: 1.2, asistencias_por_90: 0.8, ga_por_90: 1.8,
+  portero_paradas: 120, portero_goles_encajados: 60, portero_paradas_pct: 100,
 }
 
 const METRIC_LABELS = {
@@ -21,15 +23,30 @@ const METRIC_LABELS = {
   recuperaciones: 'Recup.',
   minutos_jugados: 'Minutos', goles_por_90: 'G/90',
   asistencias_por_90: 'A/90', ga_por_90: 'G+A/90',
+  portero_paradas: 'Paradas', portero_goles_encajados: 'Goles enc.', portero_paradas_pct: 'Paradas %',
 }
 
-// Solo las 8 métricas base van al radar
-const RADAR_METRICS = ['goles', 'asistencias', 'xG', 'xA', 'pases_completados', 'regates', 'recuperaciones']
+// Métricas donde menos = mejor (barra invertida)
+const INVERTED_METRICS = new Set(['portero_goles_encajados'])
+
+const FIELD_RADAR_KEYS = ['goles', 'asistencias', 'xG', 'xA', 'pases_completados', 'regates', 'recuperaciones']
+const GK_RADAR_KEYS    = ['portero_paradas', 'portero_goles_encajados', 'portero_paradas_pct', 'pases_completados']
+const GENERIC_KEYS     = ['goles', 'asistencias', 'pases_completados', 'recuperaciones']
+
+function compareKeys(posA, posB) {
+  if (posA === 'Portero' && posB === 'Portero') return GK_RADAR_KEYS
+  return GENERIC_KEYS
+}
 
 const CATEGORIES = [
   { label: 'Ofensiva',   icon: '⚽', metrics: ['goles', 'asistencias', 'xG', 'xA'] },
   { label: 'Creación',   icon: '🎯', metrics: ['pases_completados', 'xA', 'asistencias_por_90'] },
   { label: 'Defensiva',  icon: '🛡️', metrics: ['recuperaciones', 'regates'] },
+]
+
+const GK_CATEGORIES = [
+  { label: 'Paradas',      icon: '🧤', metrics: ['portero_paradas', 'portero_paradas_pct'] },
+  { label: 'Distribución', icon: '⚙️', metrics: ['pases_completados'] },
 ]
 
 const COLOR_A  = '#22d3ee'   // cyan
@@ -61,11 +78,16 @@ const normSearch = s =>
 
 // ─── Fila de duelo: similares ─────────────────────────────────────────────────
 function DuelRow({ label, refVal, simVal, metricKey }) {
-  const max     = MAX_VALUES[metricKey] || 100
-  const refPct  = Math.min((refVal / max) * 100, 100)
-  const simPct  = Math.min((simVal / max) * 100, 100)
-  const refWins = refVal > simVal
-  const simWins = simVal > refVal
+  const max      = MAX_VALUES[metricKey] || 100
+  const inv      = INVERTED_METRICS.has(metricKey)
+  const refPct   = inv
+    ? Math.max(0, Math.min(((max - (refVal ?? 0)) / max) * 100, 100))
+    : Math.min(((refVal ?? 0) / max) * 100, 100)
+  const simPct   = inv
+    ? Math.max(0, Math.min(((max - (simVal ?? 0)) / max) * 100, 100))
+    : Math.min(((simVal ?? 0) / max) * 100, 100)
+  const refWins  = inv ? (refVal ?? 0) < (simVal ?? 0) : (refVal ?? 0) > (simVal ?? 0)
+  const simWins  = inv ? (simVal ?? 0) < (refVal ?? 0) : (simVal ?? 0) > (refVal ?? 0)
 
   return (
     <div className="grid grid-cols-[1fr_5rem_1fr] sm:grid-cols-[1fr_8rem_1fr] items-center gap-2 sm:gap-3 py-3
@@ -97,11 +119,16 @@ function DuelRow({ label, refVal, simVal, metricKey }) {
 
 // ─── Fila comparador: cyan A vs violet B ─────────────────────────────────────
 function ComparRow({ label, valA, valB, metricKey }) {
-  const max  = MAX_VALUES[metricKey] || 100
-  const pctA = Math.min(((valA ?? 0) / max) * 100, 100)
-  const pctB = Math.min(((valB ?? 0) / max) * 100, 100)
-  const aWins = (valA ?? 0) > (valB ?? 0)
-  const bWins = (valB ?? 0) > (valA ?? 0)
+  const max   = MAX_VALUES[metricKey] || 100
+  const inv   = INVERTED_METRICS.has(metricKey)
+  const pctA  = inv
+    ? Math.max(0, Math.min(((max - (valA ?? 0)) / max) * 100, 100))
+    : Math.min(((valA ?? 0) / max) * 100, 100)
+  const pctB  = inv
+    ? Math.max(0, Math.min(((max - (valB ?? 0)) / max) * 100, 100))
+    : Math.min(((valB ?? 0) / max) * 100, 100)
+  const aWins = inv ? (valA ?? 0) < (valB ?? 0) : (valA ?? 0) > (valB ?? 0)
+  const bWins = inv ? (valB ?? 0) < (valA ?? 0) : (valB ?? 0) > (valA ?? 0)
 
   return (
     <div className="grid grid-cols-[1fr_5rem_1fr] sm:grid-cols-[1fr_8rem_1fr] items-center gap-2 sm:gap-3 py-3
@@ -130,9 +157,14 @@ function ComparRow({ label, valA, valB, metricKey }) {
 }
 
 // ─── Radar con dos jugadores superpuestos ─────────────────────────────────────
-function DualRadar({ a, b }) {
-  const data = RADAR_METRICS.map(key => {
-    const norm = v => Math.min(100, Math.round(((Number(v) || 0) / MAX_VALUES[key]) * 100))
+function DualRadar({ a, b, keys = FIELD_RADAR_KEYS }) {
+  const data = keys.map(key => {
+    const max  = MAX_VALUES[key] || 100
+    const norm = v => {
+      const n = Number(v) || 0
+      if (INVERTED_METRICS.has(key)) return Math.max(0, Math.min(100, Math.round(((max - n) / max) * 100)))
+      return Math.min(100, Math.round((n / max) * 100))
+    }
     return { label: METRIC_LABELS[key], A: norm(a.metricas[key]), B: norm(b.metricas[key]) }
   })
   return (
@@ -282,6 +314,7 @@ function PlayerSearch({ jugadores, value, onChange, label, color = '#22d3ee', ex
 
 // ─── Página ───────────────────────────────────────────────────────────────────
 export default function Scouting() {
+  const { ligaId } = useLiga()
   const [searchParams]  = useSearchParams()
   const [tab, setTab]   = useState('similares')
   const [jugadores, setJugadores] = useState(jugadoresFallback)
@@ -298,8 +331,8 @@ export default function Scouting() {
   const [comparB, setComparB] = useState(jugadoresFallback[1].id)
 
   useEffect(() => {
-    getJugadores().then(setJugadores).catch(() => {})
-  }, [])
+    getJugadores({ liga_id: ligaId }).then(setJugadores).catch(() => {})
+  }, [ligaId])
 
   useEffect(() => {
     const ref = Number(searchParams.get('ref'))
@@ -321,12 +354,16 @@ export default function Scouting() {
     .sort((a, b) => a.dist - b.dist)
     .slice(0, 3)
   const comparados   = [referencia, ...similares]
-  const metricas     = Object.keys(referencia.metricas)
+  const esPorteroRef = referencia.posicion === 'Portero'
+  const metricas     = esPorteroRef ? GK_RADAR_KEYS : GENERIC_KEYS
   const duelJugador  = similares.find(j => j.id === duelId) ?? similares[0]
 
-  const jugadorA     = jugadores.find(j => j.id === comparA) || jugadores[0]
-  const jugadorB     = jugadores.find(j => j.id === comparB) || jugadores[1]
-  const mismoJugador = jugadorA.id === jugadorB.id
+  const jugadorA       = jugadores.find(j => j.id === comparA) || jugadores[0]
+  const jugadorB       = jugadores.find(j => j.id === comparB) || jugadores[1]
+  const mismoJugador   = jugadorA.id === jugadorB.id
+  const comparMetrics  = compareKeys(jugadorA.posicion, jugadorB.posicion)
+  const comparCats     = (jugadorA.posicion === 'Portero' && jugadorB.posicion === 'Portero')
+                         ? GK_CATEGORIES : CATEGORIES
 
   return (
     <main className="animate-fade-in max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -437,7 +474,7 @@ export default function Scouting() {
                          style={{ color: COLORS[i] }}>
                         {j.nombre.split(' ')[0]}
                       </p>
-                      <PlayerRadarChart metricas={j.metricas} color={COLORS[i]} />
+                      <PlayerRadarChart metricas={j.metricas} color={COLORS[i]} keys={metricas} />
                     </div>
                   ))}
                 </div>
@@ -521,15 +558,18 @@ export default function Scouting() {
                   </thead>
                   <tbody>
                     {metricas.map(m => {
-                      const vals = comparados.map(j => j.metricas[m])
-                      const max  = Math.max(...vals)
+                      const vals = comparados.map(j => j.metricas[m] ?? null)
+                      const inv  = INVERTED_METRICS.has(m)
+                      const best = inv
+                        ? Math.min(...vals.filter(v => v != null))
+                        : Math.max(...vals.filter(v => v != null))
                       return (
                         <tr key={m} className="border-b border-slate-800/40 last:border-0 hover:bg-slate-800/30 transition-colors">
                           <td className="px-6 py-3 text-slate-400 text-sm">{METRIC_LABELS[m] || m}</td>
                           {vals.map((v, i) => (
                             <td key={i} className={`text-right px-4 py-3 font-black tabular-nums text-sm ${
-                              v === max ? 'text-cyan-400' : 'text-white'
-                            }`}>{v}</td>
+                              v != null && v === best ? 'text-cyan-400' : 'text-white'
+                            }`}>{v ?? '—'}</td>
                           ))}
                         </tr>
                       )
@@ -648,7 +688,7 @@ export default function Scouting() {
                       {jugadorB.nombre.split(' ')[0]}
                     </span>
                   </div>
-                  <DualRadar a={jugadorA} b={jugadorB} />
+                  <DualRadar a={jugadorA} b={jugadorB} keys={comparMetrics} />
                 </div>
 
                 {/* Barras métricas */}
@@ -669,7 +709,7 @@ export default function Scouting() {
                       </span>
                     </div>
                   </div>
-                  {Object.keys(MAX_VALUES).map(m => (
+                  {comparMetrics.map(m => (
                     <ComparRow
                       key={m}
                       label={METRIC_LABELS[m]}
@@ -688,9 +728,10 @@ export default function Scouting() {
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-                  {CATEGORIES.map(cat => {
-                    const winsA  = cat.metrics.filter(m => (jugadorA.metricas[m] ?? 0) > (jugadorB.metricas[m] ?? 0)).length
-                    const winsB  = cat.metrics.filter(m => (jugadorB.metricas[m] ?? 0) > (jugadorA.metricas[m] ?? 0)).length
+                  {comparCats.map(cat => {
+                    const better = (m, x, y) => INVERTED_METRICS.has(m) ? x < y : x > y
+                    const winsA  = cat.metrics.filter(m => better(m, jugadorA.metricas[m] ?? 0, jugadorB.metricas[m] ?? 0)).length
+                    const winsB  = cat.metrics.filter(m => better(m, jugadorB.metricas[m] ?? 0, jugadorA.metricas[m] ?? 0)).length
                     const winner = winsA > winsB ? 'A' : winsB > winsA ? 'B' : 'draw'
                     const winName = winner === 'A' ? jugadorA.nombre.split(' ')[0]
                                   : winner === 'B' ? jugadorB.nombre.split(' ')[0]
@@ -759,9 +800,10 @@ export default function Scouting() {
 
                 {/* Ganador global */}
                 {(() => {
-                  const allMetrics = CATEGORIES.flatMap(c => c.metrics)
-                  const totalA  = allMetrics.filter(m => (jugadorA.metricas[m] ?? 0) > (jugadorB.metricas[m] ?? 0)).length
-                  const totalB  = allMetrics.filter(m => (jugadorB.metricas[m] ?? 0) > (jugadorA.metricas[m] ?? 0)).length
+                  const allMetrics = comparCats.flatMap(c => c.metrics)
+                  const better = (m, x, y) => INVERTED_METRICS.has(m) ? x < y : x > y
+                  const totalA  = allMetrics.filter(m => better(m, jugadorA.metricas[m] ?? 0, jugadorB.metricas[m] ?? 0)).length
+                  const totalB  = allMetrics.filter(m => better(m, jugadorB.metricas[m] ?? 0, jugadorA.metricas[m] ?? 0)).length
                   const isDraw  = totalA === totalB
                   const winnerJ = totalA > totalB ? jugadorA : jugadorB
                   const winnerColor = winnerJ.id === jugadorA.id ? COLOR_A : COLOR_B
