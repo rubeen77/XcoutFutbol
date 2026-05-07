@@ -86,6 +86,56 @@ def listar_jugadores(
 
 
 # ---------------------------------------------------------------------------
+# GET /jugadores/count        )
+# GET /jugadores/top-scorer   ) deben ir ANTES de /{id} para que no colisionen
+# ---------------------------------------------------------------------------
+
+@router.get("/count")
+def contar_jugadores(temporada: str = Query("2526")):
+    res = (
+        supabase.table("estadisticas_jugador")
+        .select("jugador_id", count="exact")
+        .eq("temporada", temporada)
+        .limit(1)
+        .execute()
+    )
+    return {"count": res.count or 0}
+
+
+@router.get("/top-scorer")
+def top_scorer(liga_id: int = Query(1), temporada: str = Query("2526")):
+    res = (
+        supabase.table("estadisticas_jugador")
+        .select(
+            "goles, asistencias, xg, xa, minutos, "
+            "jugadores(id, nombre, posicion, foto_url, valor_mercado, equipos(nombre))"
+        )
+        .eq("temporada", temporada)
+        .eq("liga_id", liga_id)
+        .not_.is_("goles", "null")
+        .order("goles", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not res.data:
+        return {"jugador": None}
+
+    fila = res.data[0]
+    j    = fila.pop("jugadores", {}) or {}
+    return {
+        "jugador": {
+            **j,
+            "equipo":      (j.get("equipos") or {}).get("nombre", ""),
+            "goles":       fila.get("goles",       0),
+            "asistencias": fila.get("asistencias", 0),
+            "xg":          fila.get("xg",          0),
+            "xa":          fila.get("xa",          0),
+            "minutos":     fila.get("minutos",      0),
+        }
+    }
+
+
+# ---------------------------------------------------------------------------
 # GET /jugadores/ranking  (debe ir ANTES de /{id} para que no colisione)
 # ---------------------------------------------------------------------------
 

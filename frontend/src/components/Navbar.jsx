@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useLiga } from '../contexts/LigaContext'
 
 function XcoutLogo() {
@@ -62,7 +62,7 @@ function XcoutLogo() {
 
 
 const links = [
-  { to: '/', label: 'Jugadores' },
+  { to: '/jugadores', label: 'Jugadores' },
   { to: '/scouting', label: 'Scouting' },
   { to: '/equipos', label: 'Equipos' },
   { to: '/partidos', label: 'Partidos' },
@@ -104,7 +104,7 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-14">
 
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 group">
+          <Link to="/jugadores" className="flex items-center gap-2 group">
             <XcoutLogo />
             <span
               className="text-[1.2rem] font-black tracking-tight select-none"
@@ -162,6 +162,17 @@ export default function Navbar() {
               </Link>
             ))}
           </div>
+
+          {/* Ver planes */}
+          <Link
+            to="/precios"
+            className="hidden md:flex items-center px-5 py-2 rounded-full text-sm font-bold
+                       border border-cyan-400/50 text-cyan-400
+                       hover:bg-cyan-400/10 hover:border-cyan-400
+                       transition-all duration-150 shrink-0"
+          >
+            Ver planes
+          </Link>
 
           {/* Selector de liga */}
           <div className="hidden md:flex items-center gap-2 relative" ref={dropRef}>

@@ -3,6 +3,8 @@ import {
   getInsightsRankings,
   getInsightsDatosCuriosos,
   getInsightsQuiz,
+  getAnalisisJornada,
+  generarAnalisis,
 } from '../services/api'
 import { useLiga } from '../contexts/LigaContext'
 
@@ -452,32 +454,183 @@ function QuizSection() {
   )
 }
 
-// ─── PLACEHOLDER IA ───────────────────────────────────────────────────────────
+// ─── ANÁLISIS IA ──────────────────────────────────────────────────────────────
+
+const ES_DEV = typeof window !== 'undefined' && window.location.hostname === 'localhost'
+
+const LIGA_ICONOS = { 1: '⚽', 24: '🏆', 25: '🦅' }
+
+function AnalisisIASkeleton() {
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 animate-pulse">
+      <div className="h-3 bg-slate-800 rounded-full w-24" />
+      <div className="h-6 bg-slate-800 rounded-full w-3/4" />
+      <div className="space-y-2 pt-2">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="h-3 bg-slate-800 rounded-full" style={{ width: `${90 - i * 8}%` }} />
+        ))}
+      </div>
+      <div className="space-y-2 pt-1">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="h-3 bg-slate-800 rounded-full" style={{ width: `${85 - i * 6}%` }} />
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function AnalisisIASection() {
+  const { ligaId, ligaActual } = useLiga()
+  const [analisis,    setAnalisis]    = useState(null)
+  const [loading,     setLoading]     = useState(true)
+  const [regenerando, setRegenerando] = useState(false)
+  const [error,       setError]       = useState(null)
+
+  const cargar = useCallback((forzar = false) => {
+    if (forzar) setRegenerando(true)
+    else        setLoading(true)
+    setError(null)
+
+    const fetch_fn = forzar && analisis
+      ? () => generarAnalisis(ligaId, analisis.jornada, '2526')
+      : () => getAnalisisJornada(ligaId)
+
+    fetch_fn()
+      .then(d => setAnalisis(d))
+      .catch(e => setError(e.message))
+      .finally(() => { setLoading(false); setRegenerando(false) })
+  }, [ligaId, analisis])
+
+  useEffect(() => {
+    setAnalisis(null)
+    cargar(false)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ligaId])
+
+  function fmt_fecha(iso) {
+    if (!iso) return ''
+    const d = new Date(iso)
+    const dia = d.toLocaleDateString('es-ES', { weekday: 'long' })
+    const fecha = d.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
+    return `Generado el ${dia} ${fecha}`
+  }
+
   return (
     <section>
-      <div className="flex items-center gap-2 mb-5">
-        <div className="w-1.5 h-5 rounded-full bg-slate-700 shrink-0" />
-        <h2 className="text-sm font-bold text-slate-600 uppercase tracking-widest">
-          Análisis de jornada con IA
-        </h2>
-      </div>
-      <div className="bg-slate-900/50 border border-dashed border-slate-700/50 rounded-2xl p-8 text-center">
-        <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700/60
-                        flex items-center justify-center mx-auto mb-4">
-          <svg className="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-              d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707
-                 m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0
-                 v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-          </svg>
+      <div className="flex items-center justify-between gap-2 mb-5">
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-5 rounded-full bg-violet-400 shrink-0" />
+          <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">
+            Análisis IA · Jornada
+          </h2>
         </div>
-        <p className="text-slate-500 font-semibold text-sm mb-1">Disponible próximamente</p>
-        <p className="text-slate-600 text-xs max-w-xs mx-auto">
-          Análisis narrativo de cada jornada generado automáticamente desde los datos reales de la temporada.
-        </p>
+        {ES_DEV && analisis && !loading && (
+          <button
+            onClick={() => cargar(true)}
+            disabled={regenerando}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
+                       border border-violet-500/40 text-violet-400 hover:bg-violet-500/10
+                       transition-all duration-150 disabled:opacity-50"
+          >
+            {regenerando ? (
+              <span className="w-3 h-3 border border-violet-400/50 border-t-violet-400 rounded-full animate-spin" />
+            ) : (
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            )}
+            Regenerar
+          </button>
+        )}
       </div>
+
+      {loading && <AnalisisIASkeleton />}
+
+      {error && !loading && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-5 text-center">
+          <p className="text-red-400 text-sm">{error}</p>
+        </div>
+      )}
+
+      {!loading && !error && !analisis && (
+        <div className="bg-slate-900/50 border border-dashed border-slate-700/50 rounded-2xl p-8 text-center">
+          <p className="text-slate-500 font-semibold text-sm mb-1">Sin análisis disponible</p>
+          <p className="text-slate-600 text-xs max-w-xs mx-auto">
+            El análisis se genera automáticamente cada lunes tras la jornada.
+          </p>
+          {ES_DEV && (
+            <button
+              onClick={() => {
+                const j = parseInt(prompt('Número de jornada:') || '0', 10)
+                if (j > 0) generarAnalisis(ligaId, j).then(d => setAnalisis(d)).catch(e => setError(e.message))
+              }}
+              className="mt-4 px-4 py-2 rounded-xl text-xs font-bold border border-violet-500/40
+                         text-violet-400 hover:bg-violet-500/10 transition-all"
+            >
+              Generar manualmente (dev)
+            </button>
+          )}
+        </div>
+      )}
+
+      {!loading && !error && analisis && (
+        <div className="relative rounded-2xl overflow-hidden border border-slate-700/50 shadow-2xl shadow-black/60">
+
+          {/* Barra de color superior */}
+          <div className="h-1 w-full bg-gradient-to-r from-cyan-400 via-violet-400 to-cyan-400" />
+
+          <div className="bg-gradient-to-b from-slate-900 to-slate-950">
+
+            {/* Header */}
+            <div className="relative px-6 pt-6 pb-5 overflow-hidden">
+              {/* Marca de agua: número de jornada */}
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[7rem] font-black
+                              text-cyan-400/[0.06] tabular-nums select-none leading-none pointer-events-none">
+                {analisis.jornada}
+              </div>
+
+              <div className="relative flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-2">
+                    {LIGA_ICONOS[ligaId]} {ligaActual.nombre} · 2025/26
+                  </p>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm font-semibold text-slate-500">Jornada</span>
+                    <span className="text-5xl font-black text-cyan-400 tabular-nums leading-none">
+                      {analisis.jornada}
+                    </span>
+                  </div>
+                </div>
+                <span className="shrink-0 mb-1 flex items-center gap-1.5 text-xs font-black
+                                 text-slate-950 bg-cyan-400 rounded-full px-3 py-1.5 tracking-wide">
+                  ✦ IA
+                </span>
+              </div>
+            </div>
+
+            {/* Separador degradado */}
+            <div className="mx-6 h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent" />
+
+            {/* Cuerpo */}
+            <div className="px-6 py-6">
+              <h3 className="text-2xl font-black text-white leading-tight mb-3">
+                {analisis.titulo}
+              </h3>
+              <div className="w-16 h-0.5 rounded-full mb-5"
+                   style={{ background: 'linear-gradient(to right, #00E5FF, transparent)' }} />
+              <p className="text-xs text-slate-600 mb-6">{fmt_fecha(analisis.generado_en)}</p>
+              <div className="space-y-5">
+                {(analisis.contenido || '').split(/\n{2,}/).filter(Boolean).map((parrafo, i) => (
+                  <p key={i} className="text-slate-300 text-sm leading-[1.8]">
+                    {parrafo.trim()}
+                  </p>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }

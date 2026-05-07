@@ -69,6 +69,22 @@ def listar_partidos(
 
 
 # ---------------------------------------------------------------------------
+# GET /partidos/count  (debe ir ANTES de /{id} para que no colisione)
+# ---------------------------------------------------------------------------
+
+@router.get("/count")
+def contar_partidos(temporada: str = Query("2526")):
+    res = (
+        supabase.table("partidos")
+        .select("id", count="exact")
+        .eq("temporada", temporada)
+        .limit(1)
+        .execute()
+    )
+    return {"count": res.count or 0}
+
+
+# ---------------------------------------------------------------------------
 # GET /partidos/{id}
 # ---------------------------------------------------------------------------
 

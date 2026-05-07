@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { jugadores as jugadoresFallback } from '../data/jugadores'
-import { getJugadores } from '../services/api'
+import { getJugadores, getConteoJugadores, getConteoPartidos, getTopScorer } from '../services/api'
 import { useLiga } from '../contexts/LigaContext'
 import PlayerCard from '../components/PlayerCard'
 
@@ -9,6 +9,166 @@ function Spinner() {
   return (
     <div className="flex items-center justify-center py-20">
       <div className="w-8 h-8 rounded-full border-2 border-slate-700 border-t-cyan-400 animate-spin" />
+    </div>
+  )
+}
+
+// ─── Animación contador 0 → target ───────────────────────────────────────────
+function useCountUp(target, duration = 1000) {
+  const [value, setValue] = useState(0)
+  useEffect(() => {
+    if (!target) return
+    const start = performance.now()
+    function step(now) {
+      const progress = Math.min((now - start) / duration, 1)
+      const eased    = 1 - Math.pow(1 - progress, 3)
+      setValue(Math.round(target * eased))
+      if (progress < 1) requestAnimationFrame(step)
+    }
+    requestAnimationFrame(step)
+  }, [target, duration])
+  return value
+}
+
+// ─── Barra de estadísticas ────────────────────────────────────────────────────
+function StatBar({ countJugadores, countPartidos }) {
+  const animJugadores = useCountUp(countJugadores)
+  const animPartidos  = useCountUp(countPartidos)
+
+  const items = [
+    { anim: countJugadores ? animJugadores : null, label: 'jugadores' },
+    { anim: 3,                                      label: 'ligas'     },
+    { anim: countPartidos  ? animPartidos  : null,  label: 'partidos'  },
+  ]
+
+  return (
+    <div className="border-b border-slate-800/60 bg-slate-950/80 backdrop-blur">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="grid grid-cols-3 divide-x divide-slate-800/60">
+          {items.map(({ anim, label }) => (
+            <div key={label} className="flex flex-col items-center py-1 px-4">
+              <span className="text-3xl sm:text-4xl font-black text-cyan-400 tabular-nums leading-none">
+                {anim != null ? anim.toLocaleString() : '—'}
+              </span>
+              <span className="text-xs text-slate-500 mt-1.5 uppercase tracking-widest font-medium">
+                {label}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Card máximo goleador del hero (solo desktop) ────────────────────────────
+function HeroDecorCard({ jugador, loading, ligaNombre }) {
+  if (!loading && !jugador) return null
+
+  function initials(nombre) {
+    return nombre ? nombre.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase() : '?'
+  }
+
+  if (loading) {
+    return (
+      <div className="bg-slate-900/80 border border-slate-700/50 rounded-2xl p-5 w-72 animate-pulse">
+        <div className="flex items-center gap-1.5 mb-4">
+          <div className="h-3 bg-slate-800 rounded-full w-28" />
+        </div>
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-11 h-11 rounded-xl bg-slate-800 shrink-0" />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-3 bg-slate-800 rounded-full w-3/4" />
+            <div className="h-2.5 bg-slate-800 rounded-full w-1/2" />
+          </div>
+          <div className="w-14 h-8 bg-slate-800 rounded-lg shrink-0" />
+        </div>
+        <div className="space-y-2.5">
+          {[...Array(4)].map((_, i) => (
+            <div key={i}>
+              <div className="flex justify-between mb-1">
+                <div className="h-2.5 bg-slate-800 rounded-full w-12" />
+                <div className="h-2.5 bg-slate-800 rounded-full w-6" />
+              </div>
+              <div className="h-1.5 bg-slate-800 rounded-full" />
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 pt-3 border-t border-slate-800 flex justify-between">
+          <div className="h-2.5 bg-slate-800 rounded-full w-20" />
+          <div className="h-2.5 bg-slate-800 rounded-full w-16" />
+        </div>
+      </div>
+    )
+  }
+
+  const bars = [
+    { label: 'Goles',  val: jugador.goles       ?? 0,               max: 30, color: 'bg-cyan-400'   },
+    { label: 'xG',     val: +(jugador.xg         ?? 0).toFixed(1),  max: 30, color: 'bg-blue-400'   },
+    { label: 'Asist.', val: jugador.asistencias  ?? 0,               max: 20, color: 'bg-violet-400' },
+    { label: 'xA',     val: +(jugador.xa         ?? 0).toFixed(1),  max: 20, color: 'bg-purple-400' },
+  ]
+  const equipo  = jugador.equipo || (jugador.equipos || {}).nombre || ''
+  const posicion = jugador.posicion || ''
+
+  return (
+    <div className="bg-slate-900/80 border border-slate-700/50 rounded-2xl p-5 backdrop-blur shadow-2xl shadow-black/50 w-72">
+      {/* Etiqueta */}
+      <div className="flex items-center gap-1.5 mb-4">
+        <span className="text-yellow-400 text-xs">⚽</span>
+        <span className="text-xs font-bold text-yellow-400 uppercase tracking-wider">Máximo goleador</span>
+      </div>
+
+      {/* Cabecera jugador */}
+      <div className="flex items-center gap-3 mb-5">
+        {jugador.foto_url ? (
+          <img
+            src={jugador.foto_url}
+            alt={jugador.nombre}
+            className="w-11 h-11 rounded-xl object-cover border border-slate-700/50 shrink-0"
+          />
+        ) : (
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20
+                          border border-cyan-500/20 flex items-center justify-center
+                          text-cyan-400 font-black text-sm shrink-0">
+            {initials(jugador.nombre)}
+          </div>
+        )}
+        <div className="min-w-0">
+          <p className="text-white font-bold text-sm truncate">{jugador.nombre}</p>
+          <p className="text-slate-500 text-xs truncate">{equipo}{posicion ? ` · ${posicion}` : ''}</p>
+        </div>
+        {jugador.valor_mercado != null && (
+          <div className="ml-auto text-right shrink-0">
+            <p className="text-cyan-400 font-black text-sm">€{jugador.valor_mercado}M</p>
+            <p className="text-slate-600 text-xs">valor</p>
+          </div>
+        )}
+      </div>
+
+      {/* Barras */}
+      <div className="space-y-2.5">
+        {bars.map(b => (
+          <div key={b.label}>
+            <div className="flex justify-between text-xs mb-1">
+              <span className="text-slate-500">{b.label}</span>
+              <span className="text-white font-bold">{b.val}</span>
+            </div>
+            <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className={`h-full ${b.color} rounded-full`}
+                style={{ width: `${Math.min((b.val / b.max) * 100, 100)}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Footer */}
+      <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
+        <span className="text-xs text-slate-600">{ligaNombre} 2025/26</span>
+        <span className="text-xs text-cyan-400 font-semibold">{jugador.goles} goles ⚽</span>
+      </div>
     </div>
   )
 }
@@ -83,21 +243,17 @@ function DualSlider({ minVal, maxVal, onMinChange, onMaxChange, min = 16, max = 
         </span>
       </div>
       <div className="relative flex items-center h-5">
-        {/* Track fondo */}
         <div className="absolute w-full h-1.5 bg-slate-700 rounded-full pointer-events-none" />
-        {/* Track activo */}
         <div
           className="absolute h-1.5 bg-cyan-400 rounded-full pointer-events-none"
           style={{ left: `${pctLo}%`, right: `${100 - pctHi}%` }}
         />
-        {/* Input mínimo */}
         <input
           type="range" min={min} max={max} value={minVal}
           onChange={e => onMinChange(Math.min(Number(e.target.value), maxVal - 1))}
           className="absolute w-full h-1.5 appearance-none bg-transparent range-thumb"
           style={{ zIndex: minVal > max - 4 ? 5 : 3 }}
         />
-        {/* Input máximo */}
         <input
           type="range" min={min} max={max} value={maxVal}
           onChange={e => onMaxChange(Math.max(Number(e.target.value), minVal + 1))}
@@ -235,6 +391,9 @@ function IconFilter({ count }) {
 
 // ─── Página ───────────────────────────────────────────────────────────────────
 export default function Home() {
+  const navigate   = useNavigate()
+  const filtrosRef = useRef(null)
+
   const { ligaId } = useLiga()
   const [query,          setQuery]          = useState('')
   const [posicion,       setPosicion]       = useState('Todas')
@@ -242,7 +401,12 @@ export default function Home() {
   const [vista,          setVista]          = useState('cards')
   const [metricaRank,    setMetricaRank]    = useState('goles')
   const [jugadores,      setJugadores]      = useState(jugadoresFallback)
-  const [fuenteDatos,    setFuenteDatos]    = useState('fallback')  // 'api' | 'fallback'
+  const [fuenteDatos,    setFuenteDatos]    = useState('fallback')
+
+  const [countJugadores, setCountJugadores] = useState(0)
+  const [countPartidos,  setCountPartidos]  = useState(0)
+  const [topScorer,      setTopScorer]      = useState(null)
+  const [loadingTop,     setLoadingTop]     = useState(true)
 
   // Panel avanzado
   const [panelOpen, setPanelOpen] = useState(false)
@@ -268,6 +432,24 @@ export default function Home() {
     return () => { cancelled = true }
   }, [ligaId])
 
+  useEffect(() => {
+    Promise.all([getConteoJugadores(), getConteoPartidos()]).then(([j, p]) => {
+      setCountJugadores(j)
+      setCountPartidos(p)
+    })
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoadingTop(true)
+    getTopScorer(ligaId).then(data => {
+      if (cancelled) return
+      setTopScorer(data)
+      setLoadingTop(false)
+    })
+    return () => { cancelled = true }
+  }, [ligaId])
+
   // ── Aplicar / limpiar ──
   function aplicar() {
     setFiltros({ ...draft })
@@ -279,10 +461,13 @@ export default function Home() {
     setPosicion('Todas')
   }
 
-  // Abrir panel: sincroniza draft con el estado activo
   function togglePanel() {
     if (!panelOpen) setDraft({ ...filtros })
     setPanelOpen(v => !v)
+  }
+
+  function scrollToFiltros() {
+    filtrosRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   // ── Filtrado combinado ──
@@ -320,170 +505,204 @@ export default function Home() {
         <div className="absolute top-1/2 right-0 -translate-y-1/2 translate-x-1/2 w-[600px] h-[600px] rounded-full border border-cyan-500/5 pointer-events-none" />
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28">
-          <div className="max-w-3xl">
-            {!loading && fuenteDatos === 'api' && (
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/5 mb-8">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                <span className="text-cyan-400 text-xs font-semibold tracking-widest uppercase">
-                  LaLiga 2025/26 · {jugadores.length} jugadores
-                </span>
-              </div>
-            )}
+          <div className="flex items-center gap-16">
 
-            <h1 className="mb-6 leading-[0.95]">
-              <span className="block text-5xl sm:text-7xl font-light text-slate-500 tracking-tight">El fútbol</span>
-              <span className="block text-5xl sm:text-7xl font-black text-white tracking-tight">en datos</span>
-              <span className="block text-5xl sm:text-7xl font-black text-cyan-400 tracking-tight">reales.</span>
-            </h1>
-
-            <p className="text-slate-400 text-lg sm:text-xl max-w-xl leading-relaxed mb-10 font-light">
-              Análisis avanzado, scouting inteligente y estadísticas que no encontrarás en ningún otro sitio.
-              <span className="text-white font-medium"> En español.</span>
-            </p>
-
-            {/* ── Buscador + botón avanzado ── */}
-            <div className="max-w-xl">
-              <div className="flex gap-3">
-                {/* Search input */}
-                <div className="relative flex-1">
-                  <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 pointer-events-none"
-                       fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  <input
-                    type="text"
-                    placeholder="Busca un jugador o equipo..."
-                    value={query}
-                    onChange={e => setQuery(e.target.value)}
-                    className="w-full bg-slate-900/80 backdrop-blur border border-slate-700/80 rounded-2xl
-                               pl-12 pr-4 py-4 text-white placeholder-slate-600
-                               focus:outline-none focus:border-cyan-500/60 focus:bg-slate-900
-                               text-base transition-all"
-                  />
+            {/* Texto */}
+            <div className="flex-1 max-w-2xl">
+              {!loading && fuenteDatos === 'api' && (
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/5 mb-8">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                  <span className="text-cyan-400 text-xs font-semibold tracking-widest uppercase">
+                    LaLiga 2025/26 · {jugadores.length} jugadores
+                  </span>
                 </div>
+              )}
 
-                {/* Búsqueda avanzada */}
+              <h1 className="mb-6 leading-[0.95]">
+                <span className="block text-5xl sm:text-7xl font-light text-slate-500 tracking-tight">El fútbol</span>
+                <span className="block text-5xl sm:text-7xl font-black text-white tracking-tight">en datos</span>
+                <span className="block text-5xl sm:text-7xl font-black text-cyan-400 tracking-tight">reales.</span>
+              </h1>
+
+              <p className="text-slate-400 text-lg sm:text-xl max-w-xl leading-relaxed mb-8 font-light">
+                Análisis avanzado, scouting inteligente y estadísticas que no encontrarás en ningún otro sitio.
+                <span className="text-white font-medium"> En español.</span>
+              </p>
+
+              {/* ── Botones CTA ── */}
+              <div className="flex flex-wrap gap-3 mb-10">
                 <button
-                  onClick={togglePanel}
-                  className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-semibold
-                              border transition-all duration-150 shrink-0 ${
-                    panelOpen
-                      ? 'bg-cyan-400/15 border-cyan-400/40 text-cyan-400'
-                      : numFiltros > 0
-                      ? 'bg-cyan-400/10 border-cyan-400/30 text-cyan-400'
-                      : 'bg-slate-900/80 border-slate-700/80 text-slate-400 hover:text-white hover:border-slate-600'
-                  }`}
+                  onClick={scrollToFiltros}
+                  className="flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-bold
+                             bg-cyan-400 text-slate-950 hover:bg-cyan-300
+                             transition-all duration-150 shadow-lg shadow-cyan-500/25"
                 >
-                  <IconFilter count={numFiltros} />
-                  <span className="hidden sm:inline">Filtros</span>
+                  Explorar jugadores
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => navigate('/insights')}
+                  className="flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-bold
+                             bg-slate-900/80 border border-slate-700/80 text-white
+                             hover:border-cyan-500/40 hover:text-cyan-400
+                             transition-all duration-150 backdrop-blur"
+                >
+                  Ver Insights
                 </button>
               </div>
 
-              {/* ── Panel avanzado ── */}
-              <div
-                style={{
-                  maxHeight: panelOpen ? '700px' : '0',
-                  opacity:   panelOpen ? 1 : 0,
-                  overflow:  'hidden',
-                  transition: 'max-height 0.35s ease, opacity 0.25s ease',
-                }}
-              >
-                <div className="mt-3 bg-slate-900/95 backdrop-blur border border-slate-700/60
-                                rounded-2xl p-5 space-y-5 shadow-2xl shadow-black/60">
+              {/* ── Buscador + botón avanzado ── */}
+              <div className="max-w-xl">
+                <div className="flex gap-3">
+                  <div className="relative flex-1">
+                    <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 pointer-events-none"
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="Busca un jugador o equipo..."
+                      value={query}
+                      onChange={e => setQuery(e.target.value)}
+                      className="w-full bg-slate-900/80 backdrop-blur border border-slate-700/80 rounded-2xl
+                                 pl-12 pr-4 py-4 text-white placeholder-slate-600
+                                 focus:outline-none focus:border-cyan-500/60 focus:bg-slate-900
+                                 text-base transition-all"
+                    />
+                  </div>
 
-                  {/* Edad */}
-                  <DualSlider
-                    minVal={draft.edadMin}  maxVal={draft.edadMax}
-                    onMinChange={v => setDraft(d => ({ ...d, edadMin: v }))}
-                    onMaxChange={v => setDraft(d => ({ ...d, edadMax: v }))}
-                  />
+                  <button
+                    onClick={togglePanel}
+                    className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-semibold
+                                border transition-all duration-150 shrink-0 ${
+                      panelOpen
+                        ? 'bg-cyan-400/15 border-cyan-400/40 text-cyan-400'
+                        : numFiltros > 0
+                        ? 'bg-cyan-400/10 border-cyan-400/30 text-cyan-400'
+                        : 'bg-slate-900/80 border-slate-700/80 text-slate-400 hover:text-white hover:border-slate-600'
+                    }`}
+                  >
+                    <IconFilter count={numFiltros} />
+                    <span className="hidden sm:inline">Filtros</span>
+                  </button>
+                </div>
 
-                  {/* Posición */}
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                      Posición
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {POSITION_FILTERS.map(({ value, icon, label }) => (
+                {/* ── Panel avanzado ── */}
+                <div
+                  style={{
+                    maxHeight: panelOpen ? '700px' : '0',
+                    opacity:   panelOpen ? 1 : 0,
+                    overflow:  'hidden',
+                    transition: 'max-height 0.35s ease, opacity 0.25s ease',
+                  }}
+                >
+                  <div className="mt-3 bg-slate-900/95 backdrop-blur border border-slate-700/60
+                                  rounded-2xl p-5 space-y-5 shadow-2xl shadow-black/60">
+
+                    <DualSlider
+                      minVal={draft.edadMin}  maxVal={draft.edadMax}
+                      onMinChange={v => setDraft(d => ({ ...d, edadMin: v }))}
+                      onMaxChange={v => setDraft(d => ({ ...d, edadMax: v }))}
+                    />
+
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                        Posición
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {POSITION_FILTERS.map(({ value, icon, label }) => (
+                          <button
+                            key={value}
+                            onClick={() => setPosicion(value)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
+                                        transition-all duration-150 ${
+                              posicion === value
+                                ? 'bg-cyan-400 text-slate-950'
+                                : 'bg-slate-800 border border-slate-700 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            <span>{icon}</span>{label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                        Mínimo por estadística
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <NumInput label="Goles"       value={draft.minGoles}       onChange={v => setDraft(d => ({ ...d, minGoles: v }))} />
+                        <NumInput label="Asistencias" value={draft.minAsistencias} onChange={v => setDraft(d => ({ ...d, minAsistencias: v }))} />
+                        <NumInput label="xG"          value={draft.minXG}          onChange={v => setDraft(d => ({ ...d, minXG: v }))} />
+                        <NumInput label="xA"          value={draft.minXA}          onChange={v => setDraft(d => ({ ...d, minXA: v }))} />
+                        <NumInput label="Min. jugados" value={draft.minMinutos}    onChange={v => setDraft(d => ({ ...d, minMinutos: v }))} placeholder="0" />
+                        <NumInput label="Valor máx. (M€)" value={draft.maxValor}  onChange={v => setDraft(d => ({ ...d, maxValor: v }))} placeholder="200" />
+                      </div>
+                    </div>
+
+                    <div className="pt-1 border-t border-slate-800 flex items-center justify-between gap-3">
+                      <span className="text-xs text-slate-500">
+                        {(() => {
+                          const preview = jugadores.filter(j => {
+                            const matchPos  = posicion === 'Todas' || j.posicion === posicion
+                            const matchEdad = j.edad >= draft.edadMin && j.edad <= draft.edadMax
+                            const matchG    = draft.minGoles       === '' || j.metricas.goles        >= Number(draft.minGoles)
+                            const matchA    = draft.minAsistencias === '' || j.metricas.asistencias  >= Number(draft.minAsistencias)
+                            const matchXG   = draft.minXG          === '' || j.metricas.xG           >= Number(draft.minXG)
+                            const matchXA   = draft.minXA          === '' || j.metricas.xA           >= Number(draft.minXA)
+                            const matchMin   = draft.minMinutos === '' || j.metricas.minutos_jugados >= Number(draft.minMinutos)
+                            const matchValor = draft.maxValor   === '' || (j.valor_mercado ?? Infinity) <= Number(draft.maxValor)
+                            return matchPos && matchEdad && matchG && matchA && matchXG && matchXA && matchMin && matchValor
+                          }).length
+                          return `${preview} jugador${preview !== 1 ? 'es' : ''} con estos filtros`
+                        })()}
+                      </span>
+                      <div className="flex gap-2">
                         <button
-                          key={value}
-                          onClick={() => setPosicion(value)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
-                                      transition-all duration-150 ${
-                            posicion === value
-                              ? 'bg-cyan-400 text-slate-950'
-                              : 'bg-slate-800 border border-slate-700 text-slate-400 hover:text-white'
-                          }`}
+                          onClick={limpiar}
+                          className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-400
+                                     hover:text-white border border-slate-700 hover:border-slate-500
+                                     transition-all duration-150"
                         >
-                          <span>{icon}</span>{label}
+                          Limpiar
                         </button>
-                      ))}
+                        <button
+                          onClick={aplicar}
+                          className="px-4 py-1.5 rounded-xl text-xs font-bold bg-cyan-400 text-slate-950
+                                     hover:bg-cyan-300 transition-all duration-150 shadow-lg shadow-cyan-500/20"
+                        >
+                          Aplicar filtros
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Mínimos estadísticos */}
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                      Mínimo por estadística
-                    </p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      <NumInput label="Goles"       value={draft.minGoles}       onChange={v => setDraft(d => ({ ...d, minGoles: v }))} />
-                      <NumInput label="Asistencias" value={draft.minAsistencias} onChange={v => setDraft(d => ({ ...d, minAsistencias: v }))} />
-                      <NumInput label="xG"          value={draft.minXG}          onChange={v => setDraft(d => ({ ...d, minXG: v }))} />
-                      <NumInput label="xA"          value={draft.minXA}          onChange={v => setDraft(d => ({ ...d, minXA: v }))} />
-                      <NumInput label="Min. jugados" value={draft.minMinutos}    onChange={v => setDraft(d => ({ ...d, minMinutos: v }))} placeholder="0" />
-                      <NumInput label="Valor máx. (M€)" value={draft.maxValor}  onChange={v => setDraft(d => ({ ...d, maxValor: v }))} placeholder="200" />
-                    </div>
                   </div>
-
-                  {/* Preview de resultados */}
-                  <div className="pt-1 border-t border-slate-800 flex items-center justify-between gap-3">
-                    <span className="text-xs text-slate-500">
-                      {(() => {
-                        // Preview rápido con draft (no con filtros comprometidos)
-                        const preview = jugadores.filter(j => {
-                          const matchPos  = posicion === 'Todas' || j.posicion === posicion
-                          const matchEdad = j.edad >= draft.edadMin && j.edad <= draft.edadMax
-                          const matchG    = draft.minGoles       === '' || j.metricas.goles        >= Number(draft.minGoles)
-                          const matchA    = draft.minAsistencias === '' || j.metricas.asistencias  >= Number(draft.minAsistencias)
-                          const matchXG   = draft.minXG          === '' || j.metricas.xG           >= Number(draft.minXG)
-                          const matchXA   = draft.minXA          === '' || j.metricas.xA           >= Number(draft.minXA)
-                          const matchMin   = draft.minMinutos === '' || j.metricas.minutos_jugados >= Number(draft.minMinutos)
-                          const matchValor = draft.maxValor   === '' || (j.valor_mercado ?? Infinity) <= Number(draft.maxValor)
-                          return matchPos && matchEdad && matchG && matchA && matchXG && matchXA && matchMin && matchValor
-                        }).length
-                        return `${preview} jugador${preview !== 1 ? 'es' : ''} con estos filtros`
-                      })()}
-                    </span>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={limpiar}
-                        className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-400
-                                   hover:text-white border border-slate-700 hover:border-slate-500
-                                   transition-all duration-150"
-                      >
-                        Limpiar
-                      </button>
-                      <button
-                        onClick={aplicar}
-                        className="px-4 py-1.5 rounded-xl text-xs font-bold bg-cyan-400 text-slate-950
-                                   hover:bg-cyan-300 transition-all duration-150 shadow-lg shadow-cyan-500/20"
-                      >
-                        Aplicar filtros
-                      </button>
-                    </div>
-                  </div>
-
                 </div>
               </div>
             </div>
+
+            {/* Card máximo goleador — solo desktop */}
+            <div className="hidden lg:block shrink-0 opacity-90">
+              <HeroDecorCard
+                jugador={topScorer}
+                loading={loadingTop}
+                ligaNombre={ligaId === 1 ? 'LaLiga' : ligaId === 24 ? 'Premier' : 'Bundesliga'}
+              />
+            </div>
+
           </div>
         </div>
       </section>
 
+      {/* ─── Stats Bar ─── */}
+      <StatBar countJugadores={countJugadores} countPartidos={countPartidos} />
+
       {/* ─── Filtros + contenido ─── */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      <section ref={filtrosRef} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
 
         {/* Fila de controles */}
         <div className="flex items-start justify-between gap-4 mb-8">
@@ -523,7 +742,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* Toggle cards / ranking */}
           <div className="flex gap-1 p-1 bg-slate-900 border border-slate-800 rounded-xl shrink-0">
             <button onClick={() => setVista('cards')} title="Vista cards"
               className={`p-2 rounded-lg transition-all duration-150 ${

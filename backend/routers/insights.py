@@ -5,7 +5,9 @@ GET /insights/quiz           — jugador aleatorio para adivinar
 """
 
 import random
-from fastapi import APIRouter, Query
+from typing import Optional
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 from database.supabase_client import supabase
 
 router = APIRouter()
@@ -255,3 +257,50 @@ def quiz(temporada: str = Query("2526"), liga_id: int = Query(1)):
         },
         "opciones": opciones,
     }
+
+
+# ---------------------------------------------------------------------------
+# POST /insights/generar-analisis
+# GET  /insights/analisis
+# ---------------------------------------------------------------------------
+
+class GenerarAnalisisBody(BaseModel):
+    liga_id:   int
+    jornada:   int
+    temporada: str = "2526"
+
+
+@router.post("/generar-analisis")
+def generar_analisis(body: GenerarAnalisisBody):
+    """
+    Genera (o recupera del caché) el análisis de jornada con Claude.
+    Si ya existe en analisis_jornada lo devuelve directamente.
+    """
+    try:
+        from ai.insights_generator import generar_analisis_jornada
+        resultado = generar_analisis_jornada(body.liga_id, body.jornada, body.temporada)
+        return resultado
+    except EnvironmentError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generando análisis: {e}")
+
+
+@router.get("/analisis")
+def obtener_analisis(
+    liga_id:   int = Query(1),
+    temporada: str = Query("2526"),
+):
+    """Devuelve el análisis más reciente disponible para una liga."""
+    res = (
+        supabase.table("analisis_jornada")
+        .select("*")
+        .eq("liga_id",   liga_id)
+        .eq("temporada", temporada)
+        .order("jornada", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not res.data:
+        return {"analisis": None}
+    return {"analisis": res.data[0]}

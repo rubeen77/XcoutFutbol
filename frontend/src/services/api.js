@@ -170,6 +170,28 @@ export async function getPartidosPorEquipo(equipo_id, liga_id = 1) {
 
 // ─── Insights ────────────────────────────────────────────────────────────────
 
+// ─── Análisis IA de jornada ───────────────────────────────────────────────────
+
+/** Análisis más reciente guardado para una liga. */
+export async function getAnalisisJornada(liga_id = 1, temporada = '2526') {
+  const data = await apiFetch(`/insights/analisis?liga_id=${liga_id}&temporada=${temporada}`)
+  return data.analisis || null
+}
+
+/** Genera (o recupera del caché) el análisis de una jornada concreta. */
+export async function generarAnalisis(liga_id, jornada, temporada = '2526') {
+  const res = await fetch(`${BASE_URL}/insights/generar-analisis`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ liga_id, jornada, temporada }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || `Error ${res.status}`)
+  }
+  return res.json()
+}
+
 export async function getInsightsRankings(temporada = '2526', liga_id = 1) {
   return apiFetch(`/insights/rankings?temporada=${temporada}&liga_id=${liga_id}`)
 }
@@ -191,4 +213,34 @@ export async function getPartidos(jornada, { estado, liga_id = 1 } = {}) {
 /** Ligas disponibles desde Supabase. */
 export async function getLeagues() {
   return apiFetch('/leagues')
+}
+
+/** Jugador con más goles de una liga (para la card del hero). */
+export async function getTopScorer(liga_id = 1, temporada = '2526') {
+  try {
+    const data = await apiFetch(`/jugadores/top-scorer?liga_id=${liga_id}&temporada=${temporada}`)
+    return data.jugador || null
+  } catch {
+    return null
+  }
+}
+
+/** Total de jugadores con estadísticas en una temporada. */
+export async function getConteoJugadores(temporada = '2526') {
+  try {
+    const data = await apiFetch(`/jugadores/count?temporada=${temporada}`)
+    return data.count || 0
+  } catch {
+    return 0
+  }
+}
+
+/** Total de partidos registrados en una temporada. */
+export async function getConteoPartidos(temporada = '2526') {
+  try {
+    const data = await apiFetch(`/partidos/count?temporada=${temporada}`)
+    return data.count || 0
+  } catch {
+    return 0
+  }
 }
