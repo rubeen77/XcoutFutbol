@@ -339,17 +339,7 @@ export default function Landing() {
             info@xcoutfutbol.com
           </a>
         </p>
-        <button
-          onClick={() => navigate('/jugadores')}
-          style={{
-            background: 'none', border: 'none', padding: 0,
-            color: 'rgba(255,255,255,0.18)', fontSize: '0.72rem',
-            cursor: 'pointer', textDecoration: 'underline',
-            textUnderlineOffset: 3,
-          }}
-        >
-          ¿Ya tienes acceso? Entra aquí →
-        </button>
+        <HiddenEnterButton onClick={() => navigate('/jugadores')} />
       </footer>
 
       {/* ── Responsive CSS ─────────────────────────────────────────────── */}
@@ -386,6 +376,36 @@ export default function Landing() {
         }
       `}</style>
     </div>
+  )
+}
+
+function HiddenEnterButton({ onClick }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display:      'inline-flex',
+        alignItems:   'center',
+        justifyContent: 'center',
+        width:        28,
+        height:       28,
+        borderRadius: '50%',
+        background:   hover ? 'rgba(255,255,255,0.05)' : 'none',
+        border:       'none',
+        color:        hover ? '#666' : '#333',
+        fontSize:     11,
+        cursor:       'pointer',
+        transition:   'color 0.2s, background 0.2s',
+        userSelect:   'none',
+        marginTop:    4,
+      }}
+      title="Entrar"
+    >
+      ✕
+    </button>
   )
 }
 
