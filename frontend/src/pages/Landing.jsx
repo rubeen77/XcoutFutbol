@@ -7,7 +7,6 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY,
 )
 
-const RESEND_KEY = import.meta.env.VITE_RESEND_API_KEY
 
 function XcoutLogo() {
   return (
@@ -126,45 +125,14 @@ export default function Landing() {
         .from('lista_espera')
         .insert([{ email: cleaned, origen: 'landing' }])
 
-      // Ignorar duplicados (email ya registrado)
       if (dbError && !dbError.message.includes('duplicate')) {
         throw new Error('Ha habido un problema, inténtalo de nuevo.')
       }
-
-      // 2. Email de confirmación al usuario
-      await _sendEmail({
-        to:      [cleaned],
-        subject: '¡Ya estás en la lista de espera de Xcout! 🚀',
-        html:    confirmationHtml(cleaned),
-      })
-
-      // 3. Notificación interna (best-effort, no bloquea)
-      _sendEmail({
-        to:      ['info@xcoutfutbol.com'],
-        subject: `Nuevo registro en lista de espera: ${cleaned}`,
-        html:    `<p>Nuevo email en lista de espera: <strong>${cleaned}</strong></p>`,
-      }).catch(() => {})
 
       setStatus('success')
     } catch (err) {
       setErrorMsg(err.message || 'Ha habido un problema, inténtalo de nuevo.')
       setStatus('error')
-    }
-  }
-
-  async function _sendEmail({ to, subject, html }) {
-    if (!RESEND_KEY) return
-    const res = await fetch('https://api.resend.com/emails', {
-      method:  'POST',
-      headers: {
-        'Content-Type':  'application/json',
-        'Authorization': `Bearer ${RESEND_KEY}`,
-      },
-      body: JSON.stringify({ from: 'Xcout <info@xcoutfutbol.com>', to, subject, html }),
-    })
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(body.message || `Resend error ${res.status}`)
     }
   }
 
@@ -258,7 +226,7 @@ export default function Landing() {
               textAlign:    'center',
             }}>
               <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>🎉</div>
-              <div style={{ fontWeight: 700, color: ACCENT, marginBottom: '0.2rem' }}>¡Ya estás en la lista!</div>
+              <div style={{ fontWeight: 700, color: ACCENT, marginBottom: '0.2rem' }}>¡Apuntado! Te avisaremos cuando lancemos.</div>
               <div style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.38)' }}>Te avisaremos cuando lancemos.</div>
             </div>
           ) : (
@@ -410,57 +378,4 @@ function HiddenEnterButton({ onClick }) {
       ✕
     </button>
   )
-}
-
-function confirmationHtml(email) {
-  return `<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#080C10;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#ffffff;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#080C10;padding:40px 0;">
-    <tr><td align="center">
-      <table width="560" cellpadding="0" cellspacing="0" style="background:#0d1520;border:1px solid rgba(255,255,255,0.08);border-radius:16px;overflow:hidden;">
-        <tr><td style="background:linear-gradient(135deg,#0d1f30 0%,#080C10 100%);padding:36px 40px 28px;border-bottom:1px solid rgba(0,229,255,0.15);">
-          <p style="margin:0;font-size:26px;font-weight:900;letter-spacing:-0.04em;">
-            <span style="color:#00E5FF;">X</span><span style="color:#fff;font-weight:600;">cout</span>
-          </p>
-          <p style="margin:8px 0 0;font-size:11px;color:rgba(255,255,255,0.3);letter-spacing:0.12em;text-transform:uppercase;">Football Analytics</p>
-        </td></tr>
-        <tr><td style="padding:36px 40px;">
-          <p style="margin:0 0 8px;font-size:22px;font-weight:800;letter-spacing:-0.03em;">¡Ya estás en la lista! 🎉</p>
-          <p style="margin:0 0 24px;font-size:14px;color:rgba(255,255,255,0.45);line-height:1.7;">
-            Hola, gracias por apuntarte a la lista de espera de Xcout.<br>
-            Te avisaremos en cuanto abramos el acceso.
-          </p>
-          <div style="background:rgba(0,229,255,0.06);border:1px solid rgba(0,229,255,0.2);border-radius:10px;padding:16px 20px;margin-bottom:28px;">
-            <p style="margin:0;font-size:13px;color:#00E5FF;font-weight:700;">🚀 Lanzamiento previsto: junio 2026</p>
-          </div>
-          <p style="margin:0 0 14px;font-size:12px;font-weight:700;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:0.1em;">Qué encontrarás en Xcout</p>
-          <table width="100%" cellpadding="0" cellspacing="0">
-            <tr><td style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
-              <span style="color:#00E5FF;">📊</span>&nbsp;&nbsp;
-              <span style="font-size:13px;color:rgba(255,255,255,0.7);">Estadísticas avanzadas con IA — xG, xA, radar charts</span>
-            </td></tr>
-            <tr><td style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
-              <span style="color:#00E5FF;">🔍</span>&nbsp;&nbsp;
-              <span style="font-size:13px;color:rgba(255,255,255,0.7);">Scouting inteligente con algoritmos de similitud</span>
-            </td></tr>
-            <tr><td style="padding:8px 0;">
-              <span style="color:#00E5FF;">🤖</span>&nbsp;&nbsp;
-              <span style="font-size:13px;color:rgba(255,255,255,0.7);">Análisis narrativo automático de cada jornada</span>
-            </td></tr>
-          </table>
-        </td></tr>
-        <tr><td style="padding:20px 40px;border-top:1px solid rgba(255,255,255,0.06);">
-          <p style="margin:0;font-size:11px;color:rgba(255,255,255,0.2);line-height:1.6;">
-            ✕ Xcout · xcoutfutbol.com<br>
-            Contacto: <a href="mailto:info@xcoutfutbol.com" style="color:rgba(255,255,255,0.3);">info@xcoutfutbol.com</a><br>
-            Sin spam, te lo prometemos. Solo te avisaremos cuando haya novedades importantes.
-          </p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`
 }
