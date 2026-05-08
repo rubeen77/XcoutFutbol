@@ -66,6 +66,11 @@ const FEATURES = [
     title: 'Análisis narrativo automático',
     desc:  'Cada jornada, un análisis periodístico generado por IA con los datos más llamativos.',
   },
+  {
+    icon: '🎯',
+    title: 'Datos para tipsters',
+    desc:  'Tiros a puerta, tarjetas amarillas, córners, rachas y análisis pre-partido con IA. Todo lo que necesitas para tus apuestas.',
+  },
 ]
 
 function StatCard({ num, label }) {
@@ -328,7 +333,7 @@ export default function Landing() {
         }
         .landing-features {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(4, 1fr);
           gap: 1.25rem;
         }
         @media (max-width: 768px) {
@@ -337,7 +342,7 @@ export default function Landing() {
             gap: 2.5rem;
           }
           .landing-features {
-            grid-template-columns: 1fr;
+            grid-template-columns: repeat(2, 1fr);
           }
         }
         @media (max-width: 480px) {
