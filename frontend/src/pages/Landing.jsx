@@ -226,8 +226,8 @@ export default function Landing() {
               textAlign:    'center',
             }}>
               <div style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>🎉</div>
-              <div style={{ fontWeight: 700, color: ACCENT, marginBottom: '0.2rem' }}>¡Apuntado! Te avisaremos cuando lancemos.</div>
-              <div style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.38)' }}>Te avisaremos cuando lancemos.</div>
+              <div style={{ fontWeight: 700, color: ACCENT, marginBottom: '0.2rem' }}>¡Ya estás en la lista! 🎉</div>
+              <div style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.38)' }}>Te avisaremos en cuanto abramos el acceso.</div>
             </div>
           ) : (
             <form onSubmit={handleSubmit}>
