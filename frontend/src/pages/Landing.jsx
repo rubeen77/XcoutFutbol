@@ -121,12 +121,15 @@ export default function Landing() {
     setErrorMsg('')
 
     try {
-      // 1. Guardar en Supabase (ignora duplicados por la constraint unique de email)
+      // 1. Guardar en Supabase
       const { error: dbError } = await supabase
         .from('lista_espera')
-        .upsert({ email: cleaned, origen: 'landing' }, { onConflict: 'email', ignoreDuplicates: true })
+        .insert([{ email: cleaned, origen: 'landing' }])
 
-      if (dbError) throw new Error(dbError.message)
+      // Ignorar duplicados (email ya registrado)
+      if (dbError && !dbError.message.includes('duplicate')) {
+        throw new Error('Ha habido un problema, inténtalo de nuevo.')
+      }
 
       // 2. Email de confirmación al usuario
       await _sendEmail({
@@ -144,7 +147,7 @@ export default function Landing() {
 
       setStatus('success')
     } catch (err) {
-      setErrorMsg(err.message || 'Error al registrarse. Inténtalo de nuevo.')
+      setErrorMsg(err.message || 'Ha habido un problema, inténtalo de nuevo.')
       setStatus('error')
     }
   }
