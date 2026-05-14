@@ -7,8 +7,10 @@ import Jugador from './pages/Jugador'
 import Scouting from './pages/Scouting'
 import Insights from './pages/Insights'
 import Equipos from './pages/Equipos'
+import EquipoDetalle from './pages/EquipoDetalle'
 import Partidos from './pages/Partidos'
 import Landing from './pages/Landing'
+import Precios from './pages/Precios'
 
 function AppLayout() {
   const location = useLocation()
@@ -22,8 +24,10 @@ function AppLayout() {
             <Route path="/jugador/:id"  element={<Jugador />} />
             <Route path="/scouting"     element={<Scouting />} />
             <Route path="/equipos"      element={<Equipos />} />
+            <Route path="/equipos/:id"  element={<EquipoDetalle />} />
             <Route path="/partidos"     element={<Partidos />} />
             <Route path="/insights"     element={<Insights />} />
+            <Route path="/precios"      element={<Precios />} />
           </Routes>
         </div>
         <Footer />

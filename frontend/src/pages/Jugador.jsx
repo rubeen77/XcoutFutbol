@@ -878,7 +878,7 @@ export default function Jugador() {
         }`
         const TdNum = ({ v, k }) => (
           <td className={`px-4 py-3 text-right font-bold tabular-nums last:pr-6 ${v != null ? metricColor(k, v) : 'text-slate-700'}`}>
-            {v != null ? v : ''}
+            {v != null ? v : '—'}
           </td>
         )
 

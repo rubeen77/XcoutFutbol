@@ -199,12 +199,8 @@ def upsert_estadisticas(df: pd.DataFrame, jugador_map: dict,
             "ga_por_90":          _float(row.get("Per 90 Minutes__G+A"), 3),
             # misc
             "recuperaciones":     recuperaciones,
-            # pendiente de otras fuentes
-            "xg":                 None,
-            "xa":                 None,
-            "pases_completados":  None,
-            "regates":            None,
-            "presiones":          None,
+            # xg/xa/regates/pases_completados los ponen understat_scraper y sofascore_stats_scraper
+            # No los incluimos aquí para no sobrescribir valores existentes
         })
 
     res = (

@@ -56,7 +56,7 @@ function rachaColor(r) {
 
 function computeForm(partidos, equipo_id) {
   return partidos
-    .filter(p => p.estado === 'finalizado' && p.goles_local != null && p.goles_visitante != null)
+    .filter(p => p.goles_local != null && p.goles_visitante != null)
     .sort((a, b) => (b.jornada || 0) - (a.jornada || 0))
     .slice(0, 5).reverse()
     .map(p => {
@@ -265,7 +265,7 @@ function PartidoModal({ partidoId, onClose, ligaId = 1 }) {
   const visitante   = detalle?.visitante?.nombre || '—'
   const localId     = detalle?.local?.id     || detalle?.equipo_local
   const visitanteId = detalle?.visitante?.id || detalle?.equipo_visitante
-  const finalizado  = detalle?.estado === 'finalizado'
+  const finalizado  = detalle?.goles_local != null && detalle?.goles_visitante != null
   const tieneXg     = (detalle?.xg_local != null) || (detalle?.xg_visitante != null)
 
   const formLocal     = computeForm(partLoc, localId)
@@ -445,9 +445,9 @@ function PartidoModal({ partidoId, onClose, ligaId = 1 }) {
 // ─── Card de partido (clickable) ──────────────────────────────────────────────
 
 function stripeColors(partido) {
-  const { estado, goles_local: gl, goles_visitante: gv } = partido
+  const { goles_local: gl, goles_visitante: gv } = partido
   const none = { color: '#1e293b', glow: 'transparent' }
-  if (estado !== 'finalizado' || gl == null) return { local: none, visitante: none }
+  if (gl == null || gv == null) return { local: none, visitante: none }
   const WIN  = { color: '#10b981', glow: 'rgba(16,185,129,0.12)' }
   const DRAW = { color: '#f59e0b', glow: 'rgba(245,158,11,0.12)'  }
   const LOSE = { color: '#ef4444', glow: 'rgba(239,68,68,0.12)'   }
@@ -461,7 +461,7 @@ function stripeColors(partido) {
 function PartidoCard({ partido, onClick }) {
   const local      = partido.local?.nombre     || '—'
   const visitante  = partido.visitante?.nombre || '—'
-  const finalizado = partido.estado === 'finalizado'
+  const finalizado = partido.goles_local != null && partido.goles_visitante != null
   const { dia, hora } = formatFechaPartido(partido.fecha)
   const { local: stripeL, visitante: stripeV } = stripeColors(partido)
 
@@ -572,14 +572,14 @@ export default function Partidos() {
   const [error,     setError]     = useState(null)
   const [modalId,   setModalId]   = useState(null)
 
-  // Fase 1: jornada más reciente con 'finalizado'
+  // Fase 1: jornada más reciente con resultado (sin filtrar por estado — cada liga usa un valor distinto)
   useEffect(() => {
     setJornada(null)
     setPartidos([])
     setLoading(true)
-    getPartidos(null, { estado: 'finalizado', liga_id: ligaId })
+    getPartidos(null, { liga_id: ligaId })
       .then(res => {
-        const lista = res.partidos || []
+        const lista = (res.partidos || []).filter(p => p.goles_local != null)
         const maxJ  = lista.length > 0 ? Math.max(...lista.map(p => p.jornada)) : 1
         setJornada(maxJ)
       })
@@ -602,7 +602,60 @@ export default function Partidos() {
   const ocupado    = loading || cambiando
 
   return (
-    <div className="min-h-screen bg-[#080C10] text-white px-4 py-8">
+    <div className="min-h-screen bg-slate-950 text-white">
+      {/* Fondo decorativo */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-40 -left-40 w-[600px] h-[600px] bg-cyan-500/5 rounded-full blur-3xl" />
+        <div className="absolute top-1/3 -right-32 w-[500px] h-[500px] bg-blue-700/5 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 left-1/3 w-[400px] h-[400px] bg-violet-600/4 rounded-full blur-3xl" />
+        <div
+          className="absolute inset-0 opacity-[0.03]"
+          style={{ backgroundImage: 'linear-gradient(rgba(34,211,238,0.4) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,0.4) 1px,transparent 1px)', backgroundSize: '48px 48px' }}
+        />
+      </div>
+
+      <div className="relative px-4 py-8">
+
+        {/* Lateral izquierdo decorativo */}
+        <div className="hidden lg:flex flex-col items-center gap-6 fixed left-6 top-1/2 -translate-y-1/2 pointer-events-none select-none">
+          <div className="w-px h-24 bg-gradient-to-b from-transparent via-cyan-500/30 to-transparent" />
+          <div className="flex flex-col gap-2 items-center">
+            <div className="w-1.5 h-1.5 rounded-full bg-cyan-500/40" />
+            <div className="w-1 h-1 rounded-full bg-slate-600/60" />
+            <div className="w-1 h-1 rounded-full bg-slate-600/60" />
+          </div>
+          <span className="text-[10px] font-black tracking-[0.3em] text-slate-700 uppercase"
+                style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+            Temporada 25/26
+          </span>
+          <div className="flex flex-col gap-2 items-center">
+            <div className="w-1 h-1 rounded-full bg-slate-600/60" />
+            <div className="w-1 h-1 rounded-full bg-slate-600/60" />
+            <div className="w-1.5 h-1.5 rounded-full bg-cyan-500/40" />
+          </div>
+          <div className="w-px h-24 bg-gradient-to-b from-transparent via-cyan-500/30 to-transparent" />
+        </div>
+
+        {/* Lateral derecho decorativo */}
+        <div className="hidden lg:flex flex-col items-center gap-6 fixed right-6 top-1/2 -translate-y-1/2 pointer-events-none select-none">
+          <div className="w-px h-24 bg-gradient-to-b from-transparent via-violet-500/30 to-transparent" />
+          <div className="flex flex-col gap-2 items-center">
+            <div className="w-1.5 h-1.5 rounded-full bg-violet-500/40" />
+            <div className="w-1 h-1 rounded-full bg-slate-600/60" />
+            <div className="w-1 h-1 rounded-full bg-slate-600/60" />
+          </div>
+          <span className="text-[10px] font-black tracking-[0.3em] text-slate-700 uppercase"
+                style={{ writingMode: 'vertical-rl' }}>
+            {ligaActual?.nombre ?? 'Liga'}
+          </span>
+          <div className="flex flex-col gap-2 items-center">
+            <div className="w-1 h-1 rounded-full bg-slate-600/60" />
+            <div className="w-1 h-1 rounded-full bg-slate-600/60" />
+            <div className="w-1.5 h-1.5 rounded-full bg-violet-500/40" />
+          </div>
+          <div className="w-px h-24 bg-gradient-to-b from-transparent via-violet-500/30 to-transparent" />
+        </div>
+
       <div className="max-w-2xl mx-auto">
 
         {/* Cabecera */}
@@ -717,6 +770,7 @@ export default function Partidos() {
 
       {/* Modal */}
       {modalId !== null && <PartidoModal partidoId={modalId} onClose={cerrarModal} ligaId={ligaId} />}
+    </div>
     </div>
   )
 }

@@ -2,6 +2,38 @@ import { useState, useRef, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useLiga } from '../contexts/LigaContext'
 
+const LOGO_MAP = {
+  1:  'https://media.api-sports.io/football/leagues/140.png',
+  24: 'https://media.api-sports.io/football/leagues/39.png',
+  25: 'https://media.api-sports.io/football/leagues/78.png',
+  26: 'https://media.api-sports.io/football/leagues/135.png',
+  27: '/logos/ligue1.png',
+  28: 'https://media.api-sports.io/football/leagues/71.png',
+  29: 'https://media.api-sports.io/football/leagues/128.png',
+}
+
+function LigaLogo({ id, size = 24 }) {
+  const [err, setErr] = useState(false)
+  const src = LOGO_MAP[id]
+  return (
+    <span
+      className="inline-flex items-center justify-center shrink-0"
+      style={{ width: size, height: size }}
+    >
+      {!src || err ? (
+        <span className="w-full h-full rounded-full bg-slate-700" />
+      ) : (
+        <img
+          src={src}
+          alt=""
+          className="object-contain w-full h-full"
+          onError={() => setErr(true)}
+        />
+      )}
+    </span>
+  )
+}
+
 function XcoutLogo() {
   return (
     <svg viewBox="0 0 40 40" className="w-9 h-9" fill="none" aria-hidden="true">
@@ -79,7 +111,7 @@ export default function Navbar() {
 
   useEffect(() => {
     function ping() {
-      fetch('http://localhost:8000/health')
+      fetch('http://localhost:8001/health')
         .then(r => setBackendOk(r.ok))
         .catch(() => setBackendOk(false))
     }
@@ -180,45 +212,48 @@ export default function Navbar() {
               onClick={() => setLigaOpen(v => !v)}
               className="flex items-center gap-2 text-xs font-semibold text-slate-300
                          border border-slate-800 hover:border-cyan-400/40 hover:text-cyan-400
-                         rounded-full px-3 py-1.5 transition-all duration-150 group"
+                         rounded-full px-3 py-1.5 transition-all duration-150"
             >
-              <span>{ligaActual.emoji}</span>
-              {ligaActual.nombre}
-              <svg className={`w-3 h-3 text-slate-600 transition-transform duration-150 ${ligaOpen ? 'rotate-180' : ''}`}
+              <LigaLogo id={ligaActual?.id} size={24} />
+              <span className="hidden lg:inline">{ligaActual?.nombre}</span>
+              <svg className={`w-3 h-3 text-slate-600 transition-transform duration-200 ${ligaOpen ? 'rotate-180' : ''}`}
                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </button>
 
-            {ligaOpen && (
-              <div className="absolute top-full right-0 mt-2 w-52
-                             bg-slate-900 border border-slate-800 rounded-2xl
-                             shadow-2xl shadow-black/40 overflow-hidden z-50">
-                <p className="px-4 pt-3 pb-1 text-[10px] font-black text-slate-500
-                              uppercase tracking-widest select-none">
-                  Liga activa
-                </p>
-                {ligas.map(liga => (
-                  <button
-                    key={liga.id}
-                    onClick={() => { setLigaId(liga.id); setLigaOpen(false) }}
-                    className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium
-                                transition-colors duration-100 ${
-                      liga.id === ligaId
-                        ? 'text-cyan-400 bg-cyan-400/5'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
-                    }`}
-                  >
-                    <span>{liga.emoji}</span>
-                    <span className="flex-1 text-left">{liga.nombre}</span>
-                    {liga.id === ligaId && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
-                    )}
-                  </button>
-                ))}
-                <div className="h-2" />
-              </div>
-            )}
+            <div className={`absolute top-full right-0 mt-2 w-56
+                            bg-slate-900 border border-slate-800 rounded-2xl
+                            shadow-2xl shadow-black/50 overflow-hidden z-50
+                            transition-all duration-200 origin-top-right
+                            ${ligaOpen
+                              ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto'
+                              : 'opacity-0 scale-95 -translate-y-1 pointer-events-none'
+                            }`}>
+              <p className="px-4 pt-3 pb-1.5 text-[10px] font-black text-slate-500
+                            uppercase tracking-widest select-none">
+                Liga activa
+              </p>
+              {ligas.map(liga => (
+                <button
+                  key={liga.id}
+                  onClick={() => { setLigaId(liga.id); setLigaOpen(false) }}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium
+                              transition-colors duration-100 ${
+                    liga.id === ligaId
+                      ? 'text-cyan-400 bg-cyan-400/5'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
+                  }`}
+                >
+                  <LigaLogo id={liga.id} size={24} />
+                  <span className="flex-1 text-left">{liga.nombre}</span>
+                  {liga.id === ligaId && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
+                  )}
+                </button>
+              ))}
+              <div className="h-2" />
+            </div>
           </div>
 
           {/* Mobile burger */}
@@ -267,14 +302,14 @@ export default function Navbar() {
               <button
                 key={liga.id}
                 onClick={() => { setLigaId(liga.id); setOpen(false) }}
-                className={`w-full flex items-center gap-2.5 px-1 py-2.5 text-sm font-medium
+                className={`w-full flex items-center gap-3 px-1 py-2.5 text-sm font-medium
                             transition-colors duration-100 ${
                   liga.id === ligaId
                     ? 'text-cyan-400'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <span>{liga.emoji}</span>
+                <LigaLogo id={liga.id} size={22} />
                 <span className="flex-1 text-left">{liga.nombre}</span>
                 {liga.id === ligaId && (
                   <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />

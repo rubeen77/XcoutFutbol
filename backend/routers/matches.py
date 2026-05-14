@@ -69,6 +69,31 @@ def listar_partidos(
 
 
 # ---------------------------------------------------------------------------
+# GET /partidos/recientes  (antes de /{id} para evitar colisión de rutas)
+# ---------------------------------------------------------------------------
+
+@router.get("/recientes")
+def partidos_recientes(
+    liga_id:   int = Query(1),
+    temporada: str = Query("2526"),
+    limit:     int = Query(4),
+):
+    """Últimos partidos finalizados de una liga, ordenados por jornada y fecha desc."""
+    res = (
+        supabase.table("partidos")
+        .select(PARTIDO_SELECT)
+        .eq("liga_id", liga_id)
+        .eq("temporada", temporada)
+        .not_.is_("goles_local", "null")
+        .order("jornada", desc=True)
+        .order("fecha", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return {"partidos": res.data or []}
+
+
+# ---------------------------------------------------------------------------
 # GET /partidos/count  (debe ir ANTES de /{id} para que no colisione)
 # ---------------------------------------------------------------------------
 

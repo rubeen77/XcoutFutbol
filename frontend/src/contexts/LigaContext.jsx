@@ -16,6 +16,8 @@ const FALLBACK_LIGAS = [
   { id: 1,  nombre: 'LaLiga',         pais: 'España',     emoji: '🇪🇸' },
   { id: 24, nombre: 'Premier League', pais: 'Inglaterra', emoji: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
   { id: 25, nombre: 'Bundesliga',     pais: 'Alemania',   emoji: '🇩🇪' },
+  { id: 26, nombre: 'Serie A',        pais: 'Italia',     emoji: '🇮🇹' },
+  { id: 27, nombre: 'Ligue 1',        pais: 'Francia',    emoji: '🇫🇷' },
 ]
 
 function enrichLiga(liga) {

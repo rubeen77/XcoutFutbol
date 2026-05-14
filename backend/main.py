@@ -46,3 +46,28 @@ app.include_router(waitlist.router, prefix="/waitlist",  tags=["waitlist"])
 @app.get("/health", tags=["sistema"])
 def health():
     return {"status": "ok", "version": "1.0.0"}
+
+
+@app.get("/api/scheduler/estado", tags=["sistema"])
+def scheduler_estado():
+    from scheduler.jobs import scheduler
+    jobs = []
+    for job in scheduler.get_jobs():
+        next_run = job.next_run_time
+        jobs.append({
+            "id":           job.id,
+            "proximo_run":  next_run.isoformat() if next_run else None,
+            "trigger":      str(job.trigger),
+        })
+    return {
+        "activo": scheduler.running,
+        "jobs":   jobs,
+    }
+
+
+@app.post("/api/scheduler/forzar-actualizacion", tags=["sistema"])
+def scheduler_forzar():
+    import threading
+    from scheduler.jobs import forzar_actualizacion
+    threading.Thread(target=forzar_actualizacion, daemon=True).start()
+    return {"mensaje": "Actualizacion iniciada en segundo plano."}

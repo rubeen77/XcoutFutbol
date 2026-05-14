@@ -1,9 +1,15 @@
-const BASE_URL = 'http://localhost:8000'
+const BASE_URL = 'http://localhost:8001'
 
-async function apiFetch(path) {
-  const res = await fetch(`${BASE_URL}${path}`)
-  if (!res.ok) throw new Error(`API ${res.status}: ${path}`)
-  return res.json()
+async function apiFetch(path, timeoutMs = 8000) {
+  const ctrl = new AbortController()
+  const tid  = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, { signal: ctrl.signal })
+    if (!res.ok) throw new Error(`API ${res.status}: ${path}`)
+    return res.json()
+  } finally {
+    clearTimeout(tid)
+  }
 }
 
 // ─── Mapeo de posición FBref → español ───────────────────────────────────────
@@ -45,8 +51,8 @@ function adaptarJugador(raw) {
     metricas: {
       goles,
       asistencias,
-      xG:                stats.xg  || 0,
-      xA:                stats.xa  || 0,
+      xG:                stats.xg  ?? null,
+      xA:                stats.xa  ?? null,
       pases_completados: stats.pases_completados || 0,
       regates:           stats.regates           || 0,
       recuperaciones:    stats.recuperaciones    || 0,
@@ -78,8 +84,8 @@ function adaptarRankingItem(r, metricaFrontend) {
     metricas: {
       goles,
       asistencias,
-      xG:                r.xg  || 0,
-      xA:                r.xa  || 0,
+      xG:                r.xg  ?? null,
+      xA:                r.xa  ?? null,
       pases_completados: r.pases_completados || 0,
       regates:           r.regates           || 0,
       recuperaciones:    r.recuperaciones    || 0,
@@ -157,6 +163,11 @@ export async function getEquipoDetalle(equipo_id) {
   return apiFetch(`/equipos/${equipo_id}?temporada=2526`)
 }
 
+/** Detalle para la página /equipos/:id — equipo + clasificación liga + plantilla. */
+export async function getEquipoDetallePagina(equipo_id) {
+  return apiFetch(`/equipos/${equipo_id}/detalle?temporada=2526`)
+}
+
 /** Detalle de un partido por id. */
 export async function getPartidoDetalle(id) {
   return apiFetch(`/partidos/${id}`)
@@ -208,6 +219,12 @@ export async function getPartidos(jornada, { estado, liga_id = 1 } = {}) {
   if (jornada != null) params.set('jornada', jornada)
   if (estado)          params.set('estado', estado)
   return apiFetch(`/partidos?${params}`)
+}
+
+/** Últimos partidos finalizados de una liga. */
+export async function getUltimosPartidos(liga_id = 1, limit = 4) {
+  const data = await apiFetch(`/partidos/recientes?liga_id=${liga_id}&limit=${limit}`)
+  return data.partidos || []
 }
 
 /** Ligas disponibles desde Supabase. */

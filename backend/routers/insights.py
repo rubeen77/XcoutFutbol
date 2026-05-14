@@ -104,12 +104,10 @@ def datos_curiosos(temporada: str = Query("2526"), liga_id: int = Query(1)):
             "minutos":  minutos,
         })
 
-    with_mins = [j for j in jugadores if j["minutos"] >= 500]
+    with_mins   = [j for j in jugadores if j["minutos"] >= 500]
     mejor_sobre = max(with_mins, key=lambda j: j["sobre_xg"]) if with_mins else None
-    peor_bajo   = max(
-        [j for j in with_mins if j["xg"] > 0],
-        key=lambda j: j["bajo_xg"]
-    ) if with_mins else None
+    con_xg      = [j for j in with_mins if j["xg"] > 0]
+    peor_bajo   = max(con_xg, key=lambda j: j["bajo_xg"]) if con_xg else None
 
     # ── Partidos ──
     part_res = (
@@ -117,10 +115,9 @@ def datos_curiosos(temporada: str = Query("2526"), liga_id: int = Query(1)):
         .select("jornada, goles_local, goles_visitante, equipo_local, equipo_visitante")
         .eq("temporada", temporada)
         .eq("liga_id", liga_id)
-        .eq("estado", "finalizado")
         .execute()
     )
-    partidos = part_res.data or []
+    partidos = [p for p in (part_res.data or []) if p.get("goles_local") is not None]
 
     goles_x_jornada: dict = {}
     goles_casa: dict  = {}
@@ -156,6 +153,8 @@ def datos_curiosos(temporada: str = Query("2526"), liga_id: int = Query(1)):
         )
         eq_names = {e["id"]: e["nombre"] for e in (eq_res.data or [])}
 
+    partidos_por_jornada = len({p["equipo_local"] for p in partidos}) // 2 or 9
+
     return {
         "mejor_sobre_xg": {
             "jugador":    mejor_sobre["nombre"],
@@ -174,8 +173,9 @@ def datos_curiosos(temporada: str = Query("2526"), liga_id: int = Query(1)):
         } if peor_bajo else None,
 
         "jornada_max_goles": {
-            "jornada": max_jornada,
-            "goles":   goles_x_jornada.get(max_jornada),
+            "jornada":              max_jornada,
+            "goles":                goles_x_jornada.get(max_jornada),
+            "partidos_por_jornada": partidos_por_jornada,
         } if max_jornada else None,
 
         "mejor_equipo_casa": {

@@ -4,7 +4,6 @@ import {
   getInsightsDatosCuriosos,
   getInsightsQuiz,
   getAnalisisJornada,
-  generarAnalisis,
 } from '../services/api'
 import { useLiga } from '../contexts/LigaContext'
 
@@ -266,7 +265,7 @@ function DatosCuriososSection() {
           {datos.jornada_max_goles && (
             <DatoCard icono="💥" titulo="Jornada más goleadora"
               valor={`J${datos.jornada_max_goles.jornada}`}
-              desc={`La jornada ${datos.jornada_max_goles.jornada} fue la más prolífica con ${datos.jornada_max_goles.goles} goles en total — ${(datos.jornada_max_goles.goles / 10).toFixed(1)} de media por partido.`}
+              desc={`La jornada ${datos.jornada_max_goles.jornada} fue la más prolífica con ${datos.jornada_max_goles.goles} goles en total — ${(datos.jornada_max_goles.goles / (datos.jornada_max_goles.partidos_por_jornada || 9)).toFixed(1)} de media por partido.`}
               color="text-amber-400" />
           )}
           {datos.mejor_equipo_casa && (
@@ -284,7 +283,7 @@ function DatosCuriososSection() {
 // ─── QUIZ ─────────────────────────────────────────────────────────────────────
 
 function QuizSection() {
-  const { ligaId } = useLiga()
+  const { ligaId, ligaActual } = useLiga()
   const [quiz,      setQuiz]      = useState(null)
   const [seleccion, setSeleccion] = useState(null)
   const [racha,     setRacha]     = useState(0)
@@ -386,7 +385,7 @@ function QuizSection() {
                       {respondido ? quiz.nombre : '???'}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {respondido ? `${quiz.equipo} · ${posLabel(quiz.posicion)}` : 'LaLiga 2025/26'}
+                      {respondido ? `${quiz.equipo} · ${posLabel(quiz.posicion)}` : `${ligaActual.nombre} · 2025/26`}
                     </p>
                   </div>
                 </div>
@@ -456,8 +455,6 @@ function QuizSection() {
 
 // ─── ANÁLISIS IA ──────────────────────────────────────────────────────────────
 
-const ES_DEV = typeof window !== 'undefined' && window.location.hostname === 'localhost'
-
 const LIGA_ICONOS = { 1: '⚽', 24: '🏆', 25: '🦅' }
 
 function AnalisisIASkeleton() {
@@ -483,23 +480,16 @@ function AnalisisIASection() {
   const { ligaId, ligaActual } = useLiga()
   const [analisis,    setAnalisis]    = useState(null)
   const [loading,     setLoading]     = useState(true)
-  const [regenerando, setRegenerando] = useState(false)
-  const [error,       setError]       = useState(null)
+  const [error, setError] = useState(null)
 
-  const cargar = useCallback((forzar = false) => {
-    if (forzar) setRegenerando(true)
-    else        setLoading(true)
+  const cargar = useCallback(() => {
+    setLoading(true)
     setError(null)
-
-    const fetch_fn = forzar && analisis
-      ? () => generarAnalisis(ligaId, analisis.jornada, '2526')
-      : () => getAnalisisJornada(ligaId)
-
-    fetch_fn()
+    getAnalisisJornada(ligaId)
       .then(d => setAnalisis(d))
       .catch(e => setError(e.message))
-      .finally(() => { setLoading(false); setRegenerando(false) })
-  }, [ligaId, analisis])
+      .finally(() => setLoading(false))
+  }, [ligaId])
 
   useEffect(() => {
     setAnalisis(null)
@@ -524,25 +514,6 @@ function AnalisisIASection() {
             Análisis IA · Jornada
           </h2>
         </div>
-        {ES_DEV && analisis && !loading && (
-          <button
-            onClick={() => cargar(true)}
-            disabled={regenerando}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
-                       border border-violet-500/40 text-violet-400 hover:bg-violet-500/10
-                       transition-all duration-150 disabled:opacity-50"
-          >
-            {regenerando ? (
-              <span className="w-3 h-3 border border-violet-400/50 border-t-violet-400 rounded-full animate-spin" />
-            ) : (
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            )}
-            Regenerar
-          </button>
-        )}
       </div>
 
       {loading && <AnalisisIASkeleton />}
@@ -559,18 +530,6 @@ function AnalisisIASection() {
           <p className="text-slate-600 text-xs max-w-xs mx-auto">
             El análisis se genera automáticamente cada lunes tras la jornada.
           </p>
-          {ES_DEV && (
-            <button
-              onClick={() => {
-                const j = parseInt(prompt('Número de jornada:') || '0', 10)
-                if (j > 0) generarAnalisis(ligaId, j).then(d => setAnalisis(d)).catch(e => setError(e.message))
-              }}
-              className="mt-4 px-4 py-2 rounded-xl text-xs font-bold border border-violet-500/40
-                         text-violet-400 hover:bg-violet-500/10 transition-all"
-            >
-              Generar manualmente (dev)
-            </button>
-          )}
         </div>
       )}
 
@@ -640,8 +599,18 @@ function AnalisisIASection() {
 export default function Insights() {
   const { ligaActual } = useLiga()
   return (
-    <main className="min-h-screen bg-[#080C10] text-white">
-      <div className="max-w-4xl mx-auto px-4 py-10 space-y-14">
+    <main className="min-h-screen bg-slate-950 text-white relative overflow-hidden">
+      {/* Fondo decorativo */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-[600px] h-[600px] bg-cyan-500/5 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 -left-32 w-[500px] h-[500px] bg-violet-700/5 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 right-1/3 w-[400px] h-[400px] bg-blue-600/4 rounded-full blur-3xl" />
+        <div
+          className="absolute inset-0 opacity-[0.03]"
+          style={{ backgroundImage: 'linear-gradient(rgba(34,211,238,0.4) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,0.4) 1px,transparent 1px)', backgroundSize: '48px 48px' }}
+        />
+      </div>
+      <div className="relative max-w-4xl mx-auto px-4 py-10 space-y-14">
 
         <div>
           <h1 className="text-3xl font-black text-white mb-1">Insights</h1>

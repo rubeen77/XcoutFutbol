@@ -31,11 +31,23 @@ const INVERTED_METRICS = new Set(['portero_goles_encajados'])
 
 const FIELD_RADAR_KEYS = ['goles', 'asistencias', 'xG', 'xA', 'pases_completados', 'regates', 'recuperaciones']
 const GK_RADAR_KEYS    = ['portero_paradas', 'portero_goles_encajados', 'portero_paradas_pct', 'pases_completados']
-const GENERIC_KEYS     = ['goles', 'asistencias', 'pases_completados', 'recuperaciones']
+
+const KEYS_BY_POS = {
+  'Delantero':          ['goles', 'asistencias', 'xG', 'xA', 'goles_por_90', 'ga_por_90', 'regates', 'pases_completados'],
+  'Extremo':            ['goles', 'asistencias', 'xG', 'xA', 'goles_por_90', 'ga_por_90', 'regates', 'pases_completados'],
+  'Mediapunta':         ['goles', 'asistencias', 'xG', 'xA', 'ga_por_90', 'regates', 'pases_completados', 'recuperaciones'],
+  'Centrocampista':     ['goles', 'asistencias', 'xG', 'xA', 'pases_completados', 'regates', 'recuperaciones', 'ga_por_90'],
+  'Defensa Central':    ['goles', 'asistencias', 'xG', 'recuperaciones', 'pases_completados', 'regates'],
+  'Portero':            GK_RADAR_KEYS,
+}
 
 function compareKeys(posA, posB) {
   if (posA === 'Portero' && posB === 'Portero') return GK_RADAR_KEYS
-  return GENERIC_KEYS
+  // Si las posiciones son iguales, usar claves específicas; si distintas, unión de ambas sin duplicados
+  const keysA = KEYS_BY_POS[posA] || FIELD_RADAR_KEYS
+  const keysB = KEYS_BY_POS[posB] || FIELD_RADAR_KEYS
+  if (posA === posB) return keysA
+  return [...new Set([...keysA, ...keysB])]
 }
 
 const CATEGORIES = [
@@ -355,7 +367,7 @@ export default function Scouting() {
     .slice(0, 3)
   const comparados   = [referencia, ...similares]
   const esPorteroRef = referencia.posicion === 'Portero'
-  const metricas     = esPorteroRef ? GK_RADAR_KEYS : GENERIC_KEYS
+  const metricas     = esPorteroRef ? GK_RADAR_KEYS : FIELD_RADAR_KEYS
   const duelJugador  = similares.find(j => j.id === duelId) ?? similares[0]
 
   const jugadorA       = jugadores.find(j => j.id === comparA) || jugadores[0]
