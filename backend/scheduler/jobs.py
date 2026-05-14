@@ -204,6 +204,22 @@ def forzar_actualizacion():
     return _actualizar_semanal()
 
 
+# --- Clasificaciones desde Sofascore -----------------------------------------
+
+def _actualizar_clasificaciones_sofascore():
+    """Descarga standings de Sofascore y actualiza posicion+puntos en equipos."""
+    from scrapers.clasificacion_scraper import run as clasificacion_run
+    log.info("[cron] Iniciando actualización de clasificaciones (Sofascore)...")
+    total = clasificacion_run()
+    log.info("[cron] Clasificaciones Sofascore completadas: %d equipos.", total)
+    return total
+
+
+def forzar_clasificaciones():
+    """Lanzar clasificaciones manualmente desde el endpoint REST."""
+    return _actualizar_clasificaciones_sofascore()
+
+
 # --- Arranque y parada del scheduler -----------------------------------------
 
 def init_scheduler():
@@ -216,6 +232,13 @@ def init_scheduler():
         misfire_grace_time=3600,
     )
     scheduler.add_job(
+        _actualizar_clasificaciones_sofascore,
+        trigger=CronTrigger(day_of_week="mon", hour=11, minute=0),
+        id="clasificaciones_sofascore_semanal",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    scheduler.add_job(
         _actualizar_semanal,
         trigger=CronTrigger(day_of_week="tue", hour=4, minute=0),
         id="actualizacion_datos_semanal",
@@ -224,8 +247,9 @@ def init_scheduler():
     )
     scheduler.start()
     log.info("Scheduler iniciado.")
-    log.info("  - Analisis jornada   : lunes 10:00 AM (Europe/Madrid)")
-    log.info("  - Actualizacion datos: martes 04:00 AM (Europe/Madrid)")
+    log.info("  - Analisis jornada        : lunes 10:00 AM (Europe/Madrid)")
+    log.info("  - Clasificaciones Sofascore: lunes 11:00 AM (Europe/Madrid)")
+    log.info("  - Actualizacion datos      : martes 04:00 AM (Europe/Madrid)")
 
 
 def stop_scheduler():

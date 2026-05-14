@@ -71,3 +71,18 @@ def scheduler_forzar():
     from scheduler.jobs import forzar_actualizacion
     threading.Thread(target=forzar_actualizacion, daemon=True).start()
     return {"mensaje": "Actualizacion iniciada en segundo plano."}
+
+
+@app.get("/api/admin/actualizar-clasificaciones", tags=["admin"])
+def admin_actualizar_clasificaciones(liga_id: int = None):
+    """
+    Lanza manualmente la actualización de clasificaciones desde Sofascore.
+    Opcional: ?liga_id=1 para actualizar solo una liga.
+    """
+    import threading
+    from scrapers.clasificacion_scraper import run as clasificacion_run
+
+    ligas = [liga_id] if liga_id else None
+    threading.Thread(target=clasificacion_run, args=(ligas,), daemon=True).start()
+    msg = f"Actualización iniciada para liga_id={liga_id}." if liga_id else "Actualización iniciada para todas las ligas."
+    return {"mensaje": msg}
