@@ -10,6 +10,8 @@ const LOGO_MAP = {
   27: '/logos/ligue1.png',
   28: 'https://media.api-sports.io/football/leagues/71.png',
   29: 'https://media.api-sports.io/football/leagues/128.png',
+  33: 'https://media.api-sports.io/football/leagues/141.png',
+  28: 'https://media.api-sports.io/football/leagues/2.png',
 }
 
 function LigaLogo({ id, size = 24 }) {

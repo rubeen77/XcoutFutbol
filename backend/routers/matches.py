@@ -110,6 +110,41 @@ def contar_partidos(temporada: str = Query("2526")):
 
 
 # ---------------------------------------------------------------------------
+# GET /partidos/eliminatorias  (antes de /{id} para evitar colisión de rutas)
+# ---------------------------------------------------------------------------
+
+@router.get("/eliminatorias")
+def eliminatorias_ucl(
+    liga_id:   int = Query(28),
+    temporada: str = Query("2526"),
+):
+    """Cruces de la fase eliminatoria agrupados por ronda: Octavos→Cuartos→Semis→Final."""
+    res = (
+        supabase.table("eliminatorias")
+        .select("*")
+        .eq("liga_id", liga_id)
+        .eq("temporada", temporada)
+        .order("orden", desc=False)
+        .execute()
+    )
+
+    RONDA_ORDER = {"Octavos": 1, "Cuartos": 2, "Semifinales": 3, "Final": 4}
+
+    rondas: dict[str, list] = {}
+    for cruce in (res.data or []):
+        rondas.setdefault(cruce.get("ronda", ""), []).append(cruce)
+
+    rondas_sorted = sorted(rondas.items(), key=lambda x: RONDA_ORDER.get(x[0], 99))
+
+    return {
+        "rondas": [
+            {"ronda": ronda, "cruces": sorted(cruces, key=lambda c: c.get("orden") or 0)}
+            for ronda, cruces in rondas_sorted
+        ]
+    }
+
+
+# ---------------------------------------------------------------------------
 # GET /partidos/{id}
 # ---------------------------------------------------------------------------
 

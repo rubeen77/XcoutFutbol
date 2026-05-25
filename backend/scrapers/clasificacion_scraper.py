@@ -5,15 +5,17 @@ Endpoint:
   GET https://api.sofascore.com/api/v1/unique-tournament/{tid}/season/{sid}/standings/total
 
 IDs Sofascore:
-  LaLiga        : tournament_id=8   (season auto)
-  Premier League: tournament_id=17, season_id=76986
-  Bundesliga    : tournament_id=35, season_id=77333
-  Serie A       : tournament_id=23  (season auto)
-  Ligue 1       : tournament_id=34  (season auto)
+  LaLiga          : tournament_id=8,  season auto
+  Premier League  : tournament_id=17, season_id=76986
+  Bundesliga      : tournament_id=35, season_id=77333
+  Serie A         : tournament_id=23, season auto
+  Ligue 1         : tournament_id=34, season auto
+  Champions League: tournament_id=7,  season_id=76953
 
 Uso:
   python clasificacion_scraper.py              # todas las ligas
   python clasificacion_scraper.py --liga 1     # solo LaLiga (db liga_id)
+  python clasificacion_scraper.py --liga 28    # solo Champions League
 """
 
 import sys
@@ -51,6 +53,7 @@ LIGAS_CONFIG = {
     25: {"tournament_id": 35, "season_id": 77333, "nombre": "Bundesliga"},
     26: {"tournament_id": 23, "season_id": None,  "nombre": "Serie A"},
     27: {"tournament_id": 34, "season_id": None,  "nombre": "Ligue 1"},
+    28: {"tournament_id": 7,  "season_id": 76953, "nombre": "Champions League"},
 }
 
 DELAY = 2.0   # segundos entre peticiones
@@ -101,11 +104,22 @@ def _get_season_id(tournament_id: int) -> Optional[int]:
 # ---------------------------------------------------------------------------
 
 ALIASES = {
+    # Premier / Bundesliga
     "manchester united": "manchester utd",
     "wolverhampton":     "wolves",
-    "fc bayern munchen": "bayern munich",
     "fc st. pauli":      "st pauli",
     "stade rennais":     "rennes",
+    # Champions League — Bayern: el alias previo mapeaba a "bayern munich" (inexistente en BD)
+    "fc bayern munchen": "fc bayern munchen",   # identidad — garantiza match exacto
+    "bayern munchen":    "fc bayern munchen",
+    "bayern munich":     "fc bayern munchen",
+    # Otros UCL
+    "internazionale":       "inter",
+    "bayer leverkusen":     "bayer 04 leverkusen",
+    "union saint-gilloise": "royale union saint-gilloise",
+    "club brugge":          "club brugge kv",
+    "slavia prague":        "sk slavia praha",
+    "liverpool":            "liverpool fc",
 }
 
 

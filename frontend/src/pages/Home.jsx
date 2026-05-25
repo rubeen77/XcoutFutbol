@@ -589,6 +589,7 @@ const LIGAS_DISPLAY = [
   { id: 25, nombre: 'Bundesliga',     logo: 'https://media.api-sports.io/football/leagues/78.png'  },
   { id: 26, nombre: 'Serie A',        logo: 'https://media.api-sports.io/football/leagues/135.png' },
   { id: 27, nombre: 'Ligue 1',        logo: '/logos/ligue1.png' },
+  { id: 33, nombre: 'Hypermotion',    logo: 'https://media.api-sports.io/football/leagues/141.png' },
 ]
 
 function LigasDisponiblesSection() {
@@ -771,7 +772,7 @@ export default function Home() {
     const q         = query.toLowerCase()
     const matchText = j.nombre.toLowerCase().includes(q) || j.equipo.toLowerCase().includes(q)
     const matchPos  = posicion === 'Todas' || j.posicion === posicion
-    const matchEdad = j.edad >= filtros.edadMin && j.edad <= filtros.edadMax
+    const matchEdad = j.edad == null || (j.edad >= filtros.edadMin && j.edad <= filtros.edadMax)
     const matchG    = filtros.minGoles       === '' || j.metricas.goles        >= Number(filtros.minGoles)
     const matchA    = filtros.minAsistencias === '' || j.metricas.asistencias  >= Number(filtros.minAsistencias)
     const matchXG   = filtros.minXG          === '' || j.metricas.xG           >= Number(filtros.minXG)
@@ -950,7 +951,7 @@ export default function Home() {
                         {(() => {
                           const preview = jugadores.filter(j => {
                             const matchPos  = posicion === 'Todas' || j.posicion === posicion
-                            const matchEdad = j.edad >= draft.edadMin && j.edad <= draft.edadMax
+                            const matchEdad = j.edad == null || (j.edad >= draft.edadMin && j.edad <= draft.edadMax)
                             const matchG    = draft.minGoles       === '' || j.metricas.goles        >= Number(draft.minGoles)
                             const matchA    = draft.minAsistencias === '' || j.metricas.asistencias  >= Number(draft.minAsistencias)
                             const matchXG   = draft.minXG          === '' || j.metricas.xG           >= Number(draft.minXG)
@@ -997,7 +998,7 @@ export default function Home() {
                 <HeroDecorCard
                   jugador={topScorer}
                   loading={loadingTop}
-                  ligaNombre={ligaId === 1 ? 'LaLiga' : ligaId === 24 ? 'Premier' : 'Bundesliga'}
+                  ligaNombre={ligaActual?.nombre ?? 'Liga'}
                 />
               </div>
             </div>

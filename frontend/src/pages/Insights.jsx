@@ -455,7 +455,7 @@ function QuizSection() {
 
 // ─── ANÁLISIS IA ──────────────────────────────────────────────────────────────
 
-const LIGA_ICONOS = { 1: '⚽', 24: '🏆', 25: '🦅' }
+const LIGA_ICONOS = { 1: '⚽', 24: '🏆', 25: '🦅', 33: '🇪🇸' }
 
 function AnalisisIASkeleton() {
   return (

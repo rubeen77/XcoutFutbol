@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getPartidos, getPartidoDetalle, getPartidosPorEquipo } from '../services/api'
 import { useLiga } from '../contexts/LigaContext'
+import UCLEliminatorias from '../components/UCLEliminatorias'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -598,8 +599,9 @@ export default function Partidos() {
 
   const cerrarModal = useCallback(() => setModalId(null), [])
 
-  const totalGoles = partidos.reduce((s, p) => s + (p.goles_local ?? 0) + (p.goles_visitante ?? 0), 0)
-  const ocupado    = loading || cambiando
+  const totalJornadas = ligaId === 28 ? 8 : TOTAL_JORNADAS
+  const totalGoles    = partidos.reduce((s, p) => s + (p.goles_local ?? 0) + (p.goles_visitante ?? 0), 0)
+  const ocupado       = loading || cambiando
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -664,6 +666,15 @@ export default function Partidos() {
           <p className="text-slate-500 text-sm mt-1">Temporada 2025/26 · {ligaActual.nombre}</p>
         </div>
 
+        {/* ── Sección: Fase de Liga ── */}
+        {ligaId === 28 && (
+          <div className="flex items-center gap-3 mb-5">
+            <h2 className="text-lg font-black text-white tracking-tight whitespace-nowrap">Fase de Liga</h2>
+            <div className="flex-1 h-px bg-slate-800" />
+            <span className="text-[11px] text-slate-600 whitespace-nowrap">Jornadas 1–8</span>
+          </div>
+        )}
+
         {/* Selector de jornada */}
         <div className="flex items-center gap-2 sm:gap-3 mb-5">
           <button
@@ -688,7 +699,7 @@ export default function Partidos() {
                            cursor-pointer disabled:opacity-50 text-center"
               >
                 {jornada === null && <option value="">Cargando…</option>}
-                {Array.from({ length: TOTAL_JORNADAS }, (_, i) => i + 1).map(j => (
+                {Array.from({ length: totalJornadas }, (_, i) => i + 1).map(j => (
                   <option key={j} value={j}>Jornada {j}</option>
                 ))}
               </select>
@@ -698,8 +709,8 @@ export default function Partidos() {
           </div>
 
           <button
-            onClick={() => setJornada(j => Math.min(TOTAL_JORNADAS, j + 1))}
-            disabled={ocupado || !jornada || jornada >= TOTAL_JORNADAS}
+            onClick={() => setJornada(j => Math.min(totalJornadas, j + 1))}
+            disabled={ocupado || !jornada || jornada >= totalJornadas}
             className="w-11 h-11 rounded-xl border border-slate-700 text-slate-300
                        hover:border-cyan-500/60 hover:text-cyan-400 hover:bg-cyan-400/5
                        active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed
@@ -735,7 +746,7 @@ export default function Partidos() {
           <div className="grid grid-cols-3 gap-3 mb-6">
             <StatCard icon="🏟️" label="Partidos" value={partidos.length} />
             <StatCard icon="⚽" label="Goles"    value={totalGoles} />
-            <StatCard icon="📅" label="Jornada"  value={`${jornada}/${TOTAL_JORNADAS}`} />
+            <StatCard icon="📅" label="Jornada"  value={`${jornada}/${totalJornadas}`} />
           </div>
         )}
 
@@ -764,6 +775,21 @@ export default function Partidos() {
                   .map(p => <PartidoCard key={p.id} partido={p} onClick={setModalId} />)
             }
           </div>
+        )}
+
+        {/* ── Sección: Eliminatorias (solo Champions) ── */}
+        {ligaId === 28 && (
+          <>
+            <div className="flex items-center gap-3 mt-10 mb-6">
+              <h2 className="text-lg font-black text-white tracking-tight whitespace-nowrap">Eliminatorias</h2>
+              <div className="flex-1 h-px bg-slate-800" />
+              <span className="text-[10px] font-bold px-2.5 py-1 rounded-full
+                               bg-cyan-400/8 text-cyan-400/70 border border-cyan-400/15">
+                UCL 25/26
+              </span>
+            </div>
+            <UCLEliminatorias ligaId={ligaId} />
+          </>
         )}
 
       </div>

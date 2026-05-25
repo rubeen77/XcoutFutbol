@@ -43,8 +43,8 @@ function adaptarJugador(raw) {
     id:            raw.id,
     nombre:        raw.nombre,
     equipo:        (raw.equipos || {}).nombre || '',
-    posicion:      POS_MAP[raw.posicion] || raw.posicion || '',
-    edad:          raw.edad   || 0,
+    posicion:      POS_MAP[raw.posicion] || raw.posicion || null,
+    edad:          raw.edad   ?? null,
     nacionalidad:  raw.nacionalidad || '',
     foto_url:      raw.foto_url     || null,
     valor_mercado: raw.valor_mercado ?? null,
@@ -78,8 +78,8 @@ function adaptarRankingItem(r, metricaFrontend) {
     id:            j.id,
     nombre:        j.nombre || '',
     equipo:        (j.equipos || {}).nombre || '',
-    posicion:      POS_MAP[j.posicion] || j.posicion || '',
-    edad:          j.edad   || 0,
+    posicion:      POS_MAP[j.posicion] || j.posicion || null,
+    edad:          j.edad   ?? null,
     valor_mercado: j.valor_mercado ?? null,
     metricas: {
       goles,
@@ -250,6 +250,11 @@ export async function getConteoJugadores(temporada = '2526') {
   } catch {
     return 0
   }
+}
+
+/** Cruces de eliminatorias agrupados por ronda (Octavos→Cuartos→Semis→Final). */
+export async function getEliminatorias(liga_id = 28, temporada = '2526') {
+  return apiFetch(`/partidos/eliminatorias?liga_id=${liga_id}&temporada=${temporada}`)
 }
 
 /** Total de partidos registrados en una temporada. */

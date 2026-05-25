@@ -31,6 +31,7 @@ function teamAbrev(nombre) {
 
 const ZONA_MAP = {
   champions:  { border: 'rgba(0,82,204,0.7)',   dot: '#3b82f6', bg: 'rgba(0,82,204,0.08)'   },
+  ascenso:    { border: 'rgba(16,185,129,0.7)', dot: '#10b981', bg: 'rgba(16,185,129,0.08)' },
   europa:     { border: 'rgba(255,140,0,0.7)',  dot: '#f97316', bg: 'rgba(255,140,0,0.08)'  },
   conference: { border: 'rgba(0,168,107,0.7)', dot: '#10b981', bg: 'rgba(0,168,107,0.08)' },
   playoff:    { border: 'rgba(128,0,128,0.7)', dot: '#a855f7', bg: 'rgba(128,0,128,0.08)' },
@@ -69,6 +70,12 @@ function getZona(pos, ligaId = 1) {
     if (pos === 5) return ZONA_MAP.europa
     if (pos === 6) return ZONA_MAP.conference
     if (pos >= 18) return ZONA_MAP.descenso
+    return null
+  }
+  if (ligaId === 33) {
+    if (pos <= 2) return ZONA_MAP.ascenso
+    if (pos <= 6) return ZONA_MAP.playoff
+    if (pos >= 19) return ZONA_MAP.descenso
     return null
   }
   // LaLiga default: 20 equipos — 4 CL, 1 EL, 1 Conference, 18-20 descenso

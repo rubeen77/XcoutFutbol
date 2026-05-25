@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getEquipos } from '../services/api'
 import { useLiga } from '../contexts/LigaContext'
+import UCLEliminatorias from '../components/UCLEliminatorias'
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
 
@@ -26,16 +27,26 @@ function teamAbrev(nombre) {
 
 /* ── Zone logic ───────────────────────────────────────────────────────────── */
 const ZONA_MAP = {
-  champions:  { label: 'Champions',     bg: 'rgba(0,82,204,0.15)',   border: 'rgba(0,82,204,0.4)',   badge: 'rgba(29,78,216,0.55)',  text: '#bfdbfe' },
-  europa:     { label: 'Europa League', bg: 'rgba(255,140,0,0.15)',  border: 'rgba(255,140,0,0.4)',  badge: 'rgba(180,83,9,0.55)',   text: '#fed7aa' },
-  conference: { label: 'Conference',    bg: 'rgba(0,168,107,0.15)',  border: 'rgba(0,168,107,0.4)', badge: 'rgba(6,95,70,0.55)',    text: '#a7f3d0' },
-  playoff:    { label: 'Playoff',       bg: 'rgba(128,0,128,0.15)',  border: 'rgba(128,0,128,0.4)', badge: 'rgba(88,28,135,0.55)',  text: '#e9d5ff' },
-  descenso:   { label: 'Descenso',      bg: 'rgba(212,63,63,0.15)',  border: 'rgba(212,63,63,0.4)', badge: 'rgba(153,27,27,0.55)', text: '#fecaca' },
+  champions:    { label: 'Champions',        bg: 'rgba(0,82,204,0.15)',    border: 'rgba(0,82,204,0.4)',    badge: 'rgba(29,78,216,0.55)',  text: '#bfdbfe' },
+  ascenso:      { label: 'Ascenso directo',  bg: 'rgba(16,185,129,0.15)',  border: 'rgba(16,185,129,0.4)',  badge: 'rgba(6,95,70,0.55)',    text: '#a7f3d0' },
+  europa:       { label: 'Europa League',    bg: 'rgba(255,140,0,0.15)',   border: 'rgba(255,140,0,0.4)',   badge: 'rgba(180,83,9,0.55)',   text: '#fed7aa' },
+  conference:   { label: 'Conference',       bg: 'rgba(0,168,107,0.15)',   border: 'rgba(0,168,107,0.4)',  badge: 'rgba(6,95,70,0.55)',    text: '#a7f3d0' },
+  playoff:      { label: 'Playoff',          bg: 'rgba(128,0,128,0.15)',   border: 'rgba(128,0,128,0.4)',  badge: 'rgba(88,28,135,0.55)',  text: '#e9d5ff' },
+  descenso:     { label: 'Descenso',         bg: 'rgba(212,63,63,0.15)',   border: 'rgba(212,63,63,0.4)',  badge: 'rgba(153,27,27,0.55)',  text: '#fecaca' },
+  ucl_octavos:  { label: 'Octavos directos', bg: 'rgba(16,185,129,0.10)',  border: 'rgba(16,185,129,0.30)', badge: 'rgba(6,78,59,0.70)',   text: '#6ee7b7' },
+  ucl_playoff:  { label: 'Playoff',          bg: 'rgba(234,179,8,0.10)',   border: 'rgba(234,179,8,0.30)',  badge: 'rgba(113,63,18,0.70)', text: '#fde68a' },
+  ucl_eliminado:{ label: 'Eliminado',        bg: 'rgba(239,68,68,0.09)',   border: 'rgba(239,68,68,0.28)',  badge: 'rgba(127,29,29,0.70)', text: '#fca5a5' },
 }
 
 const ZONA_OVERRIDE = { 'Real Sociedad': ZONA_MAP.europa }
 
 function getZona(pos, nombre, ligaId = 1) {
+  if (ligaId === 28) {
+    if (pos == null) return null
+    if (pos <= 8)  return ZONA_MAP.ucl_octavos
+    if (pos <= 24) return ZONA_MAP.ucl_playoff
+    return ZONA_MAP.ucl_eliminado
+  }
   if (ligaId === 1 && nombre && ZONA_OVERRIDE[nombre]) return ZONA_OVERRIDE[nombre]
   if (pos == null) return null
   if (ligaId === 25) {
@@ -68,6 +79,12 @@ function getZona(pos, nombre, ligaId = 1) {
     if (pos === 5) return ZONA_MAP.europa
     if (pos === 6) return ZONA_MAP.conference
     if (pos >= 18) return ZONA_MAP.descenso
+    return null
+  }
+  if (ligaId === 33) {
+    if (pos <= 2) return ZONA_MAP.ascenso
+    if (pos <= 6) return ZONA_MAP.playoff
+    if (pos >= 19) return ZONA_MAP.descenso
     return null
   }
   // LaLiga default: 20 equipos — 4 CL, 1 EL, 1 Conference, 18-20 descenso
@@ -220,6 +237,41 @@ function EquiposSkeleton() {
   )
 }
 
+/* ── UCL Legend ───────────────────────────────────────────────────────────── */
+const UCL_LEGEND = [
+  { zona: ZONA_MAP.ucl_octavos,   rango: '1–8',   desc: 'Clasificados directos a octavos de final' },
+  { zona: ZONA_MAP.ucl_playoff,   rango: '9–24',  desc: 'Acceden a la ronda de playoff' },
+  { zona: ZONA_MAP.ucl_eliminado, rango: '25–36', desc: 'Eliminados de todas las competiciones europeas' },
+]
+
+function UCLLegend() {
+  return (
+    <div className="mt-5 rounded-2xl border border-slate-800/60 bg-slate-900/40 px-5 py-4">
+      <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-3">Leyenda</p>
+      <div className="flex flex-col sm:flex-row gap-2.5">
+        {UCL_LEGEND.map(({ zona, rango, desc }) => (
+          <div
+            key={rango}
+            className="flex items-center gap-3 flex-1 rounded-xl px-3 py-2.5"
+            style={{ background: zona.bg, border: `1px solid ${zona.border}` }}
+          >
+            <span
+              className="text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap shrink-0"
+              style={{ background: zona.badge, color: zona.text }}
+            >
+              {rango}
+            </span>
+            <div>
+              <p className="text-xs font-semibold" style={{ color: zona.text }}>{zona.label}</p>
+              <p className="text-[11px] text-slate-500 leading-tight mt-0.5">{desc}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /* ── Page ─────────────────────────────────────────────────────────────────── */
 export default function Equipos() {
   const { ligaId, ligaActual } = useLiga()
@@ -243,8 +295,19 @@ export default function Equipos() {
         <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
           Equipos <span className="text-cyan-400">{ligaActual.nombre}</span>
         </h1>
-        <p className="text-sm text-slate-500 mt-1">Temporada 2025/26 · {listaEquipos.length} equipos</p>
+        <p className="text-sm text-slate-500 mt-1">
+          Temporada 2025/26 · {listaEquipos.length} equipos
+        </p>
       </div>
+
+      {/* ── Sección: Fase de Liga ── */}
+      {ligaId === 28 && (
+        <div className="flex items-center gap-3 mb-5">
+          <h2 className="text-lg font-black text-white tracking-tight whitespace-nowrap">Fase de Liga</h2>
+          <div className="flex-1 h-px bg-slate-800" />
+          <span className="text-[11px] text-slate-600 whitespace-nowrap">36 equipos</span>
+        </div>
+      )}
 
       {loadingLista ? (
         <EquiposSkeleton />
@@ -254,13 +317,31 @@ export default function Equipos() {
           <p className="text-slate-500 text-xs mt-1">Verifica que el backend está corriendo en localhost:8001.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {listaEquipos.map((equipo, i) => (
-            <div key={equipo.id} className="animate-fade-up" style={{ animationDelay: `${i * 40}ms` }}>
-              <TeamCard equipo={equipo} liga={ligaActual} pos={i + 1} />
-            </div>
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {listaEquipos.map((equipo, i) => (
+              <div key={equipo.id} className="animate-fade-up" style={{ animationDelay: `${i * 40}ms` }}>
+                <TeamCard equipo={equipo} liga={ligaActual} pos={i + 1} />
+              </div>
+            ))}
+          </div>
+          {ligaId === 28 && <UCLLegend />}
+        </>
+      )}
+
+      {/* ── Sección: Eliminatorias (solo Champions) ── */}
+      {ligaId === 28 && (
+        <>
+          <div className="flex items-center gap-3 mt-10 mb-6">
+            <h2 className="text-lg font-black text-white tracking-tight whitespace-nowrap">Eliminatorias</h2>
+            <div className="flex-1 h-px bg-slate-800" />
+            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full
+                             bg-cyan-400/8 text-cyan-400/70 border border-cyan-400/15">
+              UCL 25/26
+            </span>
+          </div>
+          <UCLEliminatorias ligaId={ligaId} />
+        </>
       )}
     </main>
   )
