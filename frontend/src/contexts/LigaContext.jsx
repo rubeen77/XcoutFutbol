@@ -11,6 +11,7 @@ const EMOJI_MAP = {
   26: '🇮🇹',
   27: '🇫🇷',
   28: '🏆',
+  29: '🇦🇷',
   33: '🇪🇸',
 }
 
@@ -21,6 +22,7 @@ const FALLBACK_LIGAS = [
   { id: 26, nombre: 'Serie A',          pais: 'Italia',     emoji: '🇮🇹' },
   { id: 27, nombre: 'Ligue 1',          pais: 'Francia',    emoji: '🇫🇷' },
   { id: 28, nombre: 'Champions League', pais: 'Europa',     emoji: '🏆' },
+  { id: 29, nombre: 'Liga Profesional Argentina', pais: 'Argentina', emoji: '🇦🇷' },
   { id: 33, nombre: 'LaLiga Hypermotion', pais: 'España',   emoji: '🇪🇸' },
 ]
 

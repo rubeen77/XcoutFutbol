@@ -47,13 +47,67 @@ const METRICA_LABELS = {
 const SIN_BARRA = new Set(['minutos_jugados', 'portero_goles_encajados'])
 
 // ─── Métricas por posición ────────────────────────────────────────────────────
+function normalizePosition(posRaw) {
+  return String(posRaw || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ')
+}
+
+const POSITION_ALIASES = {
+  gk: 'GK',
+  portero: 'GK',
+  goalkeeper: 'GK',
+
+  df: 'DF',
+  'df,mf': 'DF',
+  defensa: 'DF',
+  'defensa central': 'DF',
+  central: 'DF',
+  'lateral izquierdo': 'DF',
+  'lateral derecho': 'DF',
+  'carrilero izquierdo': 'DF',
+  'carrilero derecho': 'DF',
+  'left back': 'DF',
+  'right back': 'DF',
+  'centre back': 'DF',
+  'center back': 'DF',
+
+  mf: 'MF',
+  'mf,df': 'MF',
+  mediocentro: 'MF',
+  pivote: 'MF',
+  'mediocentro defensivo': 'MF',
+  'mediocentro ofensivo': 'MF',
+  'interior izquierdo': 'MF',
+  'interior derecho': 'MF',
+  mediapunta: 'MF',
+  centrocampista: 'MF',
+  'defensive midfield': 'MF',
+  'central midfield': 'MF',
+  'attacking midfield': 'MF',
+
+  fw: 'FW',
+  'fw,mf': 'FW',
+  'mf,fw': 'FW',
+  delantero: 'FW',
+  'delantero centro': 'FW',
+  'segundo delantero': 'FW',
+  extremo: 'FW',
+  'extremo izquierdo': 'FW',
+  'extremo derecho': 'FW',
+  'centre forward': 'FW',
+  'center forward': 'FW',
+  'second striker': 'FW',
+  'left winger': 'FW',
+  'right winger': 'FW',
+}
+
 function posGroup(posRaw) {
-  if (posRaw === 'GK') return 'GK'
-  if (posRaw === 'DF' || posRaw === 'DF,MF') return 'DF'
-  if (posRaw === 'MF' || posRaw === 'MF,DF') return 'MF'
-  if (posRaw === 'MF,FW' || posRaw === 'FW,MF') return 'EXT'
-  if (posRaw === 'FW') return 'FW'
-  return 'MF'
+  const normalized = normalizePosition(posRaw).replace(/\s*,\s*/g, ',')
+  return POSITION_ALIASES[normalized] || 'MF'
 }
 
 const METRICAS_POR_POS = {
@@ -594,7 +648,7 @@ export default function Jugador() {
           Temporada {labelTemporada}
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {jugador.posicion_raw === 'GK' ? (
+          {posGroup(jugador.posicion_raw) === 'GK' ? (
             <>
               <StatPill label="Paradas"         value={metricasActivas.portero_paradas}         sub="en la temporada" />
               <StatPill label="Goles encajados" value={metricasActivas.portero_goles_encajados} sub="en la temporada" />
@@ -871,7 +925,7 @@ export default function Jugador() {
           ...[...historia.temporadas].filter(t => !t.actual).reverse(),
         ]
 
-        const esPortero = jugador.posicion_raw === 'GK'
+        const esPortero = posGroup(jugador.posicion_raw) === 'GK'
         const thCls = "text-right first:text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap first:pl-6 last:pr-6"
         const rowCls = (sel) => `border-b border-slate-800/40 last:border-0 cursor-pointer transition-colors ${
           sel ? 'bg-cyan-400/5' : 'hover:bg-slate-800/40'

@@ -78,6 +78,9 @@ function getZona(pos, ligaId = 1) {
     if (pos >= 19) return ZONA_MAP.descenso
     return null
   }
+  if (ligaId === 29) {
+    return null
+  }
   // LaLiga default: 20 equipos — 4 CL, 1 EL, 1 Conference, 18-20 descenso
   if (pos <= 4)  return ZONA_MAP.champions
   if (pos === 5) return ZONA_MAP.europa

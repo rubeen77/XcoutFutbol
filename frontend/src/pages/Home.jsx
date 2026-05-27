@@ -589,6 +589,7 @@ const LIGAS_DISPLAY = [
   { id: 25, nombre: 'Bundesliga',     logo: 'https://media.api-sports.io/football/leagues/78.png'  },
   { id: 26, nombre: 'Serie A',        logo: 'https://media.api-sports.io/football/leagues/135.png' },
   { id: 27, nombre: 'Ligue 1',        logo: '/logos/ligue1.png' },
+  { id: 29, nombre: 'Argentina',      logo: 'https://media.api-sports.io/football/leagues/128.png' },
   { id: 33, nombre: 'Hypermotion',    logo: 'https://media.api-sports.io/football/leagues/141.png' },
 ]
 

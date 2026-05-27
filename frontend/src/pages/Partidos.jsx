@@ -599,7 +599,7 @@ export default function Partidos() {
 
   const cerrarModal = useCallback(() => setModalId(null), [])
 
-  const totalJornadas = ligaId === 28 ? 8 : TOTAL_JORNADAS
+  const totalJornadas = ligaId === 28 ? 8 : ligaId === 29 ? 16 : ligaId === 33 ? 42 : TOTAL_JORNADAS
   const totalGoles    = partidos.reduce((s, p) => s + (p.goles_local ?? 0) + (p.goles_visitante ?? 0), 0)
   const ocupado       = loading || cambiando
 
